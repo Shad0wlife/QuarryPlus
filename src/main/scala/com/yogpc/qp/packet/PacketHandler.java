@@ -1,12 +1,6 @@
 package com.yogpc.qp.packet;
 
 import com.yogpc.qp.QuarryPlus;
-import com.yogpc.qp.packet.advpump.AdvPumpChangeMessage;
-import com.yogpc.qp.packet.advpump.AdvPumpStatusMessage;
-import com.yogpc.qp.packet.advquarry.AdvContentMessage;
-import com.yogpc.qp.packet.advquarry.AdvFilterMessage;
-import com.yogpc.qp.packet.advquarry.AdvModeMessage;
-import com.yogpc.qp.packet.advquarry.AdvRangeMessage;
 import com.yogpc.qp.packet.controller.AvailableEntities;
 import com.yogpc.qp.packet.controller.SetEntity;
 import com.yogpc.qp.packet.distiller.AnimatonMessage;
@@ -72,15 +66,6 @@ public class PacketHandler {
         //laser
         wrapper.registerMessage(handler, LaserMessage.class, i++, Side.CLIENT);
         wrapper.registerMessage(handler, LaserAverageMessage.class, i++, Side.CLIENT);
-        //chunkdestroyer
-        wrapper.registerMessage(handler, AdvModeMessage.class, i++, Side.CLIENT);
-        wrapper.registerMessage(handler, AdvRangeMessage.class, i++, Side.SERVER);
-        wrapper.registerMessage(handler, AdvFilterMessage.class, i++, Side.CLIENT);
-        wrapper.registerMessage(handler, AdvFilterMessage.class, i++, Side.SERVER);
-        wrapper.registerMessage(handler, AdvContentMessage.class, i++, Side.CLIENT);
-        //standalonepump
-        wrapper.registerMessage(handler, AdvPumpStatusMessage.class, i++, Side.CLIENT);
-        wrapper.registerMessage(handler, AdvPumpChangeMessage.class, i++, Side.SERVER);
         //distiller
         wrapper.registerMessage(handler, AnimatonMessage.class, i++, Side.CLIENT);
         //exppump

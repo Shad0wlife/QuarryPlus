@@ -13,8 +13,8 @@
 package com.yogpc.qp.gui
 
 import com.yogpc.qp.QuarryPlusI
-import com.yogpc.qp.container.{ContainerAdvPump, ContainerAdvQuarry, ContainerBookMover, ContainerEnchList, ContainerMover, ContainerPlacer, ContainerSolidQuarry, ContainerWorkbench}
-import com.yogpc.qp.tile.{TileAdvPump, TileAdvQuarry, TileBasic, TileBookMover, TilePlacer, TileSolidQuarry, TileWorkbench}
+import com.yogpc.qp.container.{ContainerBookMover, ContainerEnchList, ContainerMover, ContainerPlacer, ContainerSolidQuarry, ContainerWorkbench}
+import com.yogpc.qp.tile.{TileBasic, TileBookMover, TilePlacer, TileSolidQuarry, TileWorkbench}
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.init.Enchantments
 import net.minecraft.util.math.BlockPos
@@ -40,10 +40,6 @@ object GuiHandler extends IGuiHandler {
                 new GuiPlacer(p.inventory, w.getTileEntity(pos).asInstanceOf[TilePlacer])
             case QuarryPlusI.guiIdWorkbench =>
                 new GuiWorkbench(p, w.getTileEntity(pos).asInstanceOf[TileWorkbench])
-            case QuarryPlusI.guiIdAdvQuarry =>
-                new GuiAdvQuarry(w.getTileEntity(pos).asInstanceOf[TileAdvQuarry], p)
-            case QuarryPlusI.guiIdAdvPump =>
-                new GuiAdvPump(w.getTileEntity(pos).asInstanceOf[TileAdvPump], p)
             case QuarryPlusI.guiIdMoverFromBook =>
                 new GuiBookMover(w.getTileEntity(pos).asInstanceOf[TileBookMover], p)
             case QuarryPlusI.guiIdSolidQuarry =>
@@ -65,10 +61,6 @@ object GuiHandler extends IGuiHandler {
                 new ContainerPlacer(p.inventory, w.getTileEntity(pos).asInstanceOf[TilePlacer])
             case QuarryPlusI.guiIdWorkbench =>
                 new ContainerWorkbench(p, w.getTileEntity(pos).asInstanceOf[TileWorkbench])
-            case QuarryPlusI.guiIdAdvQuarry =>
-                new ContainerAdvQuarry(w.getTileEntity(pos).asInstanceOf[TileAdvQuarry], p)
-            case QuarryPlusI.guiIdAdvPump =>
-                new ContainerAdvPump(w.getTileEntity(pos).asInstanceOf[TileAdvPump], p)
             case QuarryPlusI.guiIdMoverFromBook =>
                 new ContainerBookMover(w.getTileEntity(pos).asInstanceOf[TileBookMover], p)
             case QuarryPlusI.guiIdSolidQuarry =>

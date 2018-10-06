@@ -34,6 +34,7 @@ import com.yogpc.qp.packet.quarry.ModeMessage;
 import com.yogpc.qp.packet.quarry.MoveHead;
 import com.yogpc.qp.version.VersionUtil;
 import javax.annotation.Nullable;
+
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.item.EntityXPOrb;
@@ -47,13 +48,17 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextComponentTranslation;
-import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.ForgeChunkManager.Ticket;
 import net.minecraftforge.common.ForgeChunkManager.Type;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import scala.Symbol;
+
+import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorldServer;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubeProviderServer;
+import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 
 import static com.yogpc.qp.tile.TileQuarry.Mode.BREAKBLOCK;
 import static com.yogpc.qp.tile.TileQuarry.Mode.MAKEFRAME;
@@ -92,6 +97,19 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                         S_setNextTarget();
                 break;
             case MOVEHEAD:
+                //Before moving and so on, first remove all water
+                if(this.pump != null){
+                    TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                    if(te instanceof TilePump) {
+                        TilePump pumpTE = (TilePump)te;
+                        if(pumpTE.liquidsToRemove() > 0){
+                            pumpTE.S_removeLiquids(this);
+                        }
+                    }else{
+                        this.pump = null;
+                    }
+                }
+
                 final boolean done = S_moveHead();
                 MoveHead.send(this);
                 if (!done)
@@ -114,18 +132,12 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
         if (this.targetY > this.yMax)
             this.targetY = this.yMax;
         BlockPos target = new BlockPos(this.targetX, this.targetY, this.targetZ);
-        Chunk loadedChunk = getWorld().getChunkProvider().getLoadedChunk(this.targetX >> 4, this.targetZ >> 4);
-        final IBlockState b;
-        if (loadedChunk != null) {
-            b = loadedChunk.getBlockState(target);
-        } else {
-            b = getWorld().getBlockState(target);
-        }
+        final IBlockState b = this.getBlockStateAt(target);
         final float blockHardness = b.getBlockHardness(getWorld(), target);
         switch (this.now) {
             case BREAKBLOCK:
             case MOVEHEAD:
-                if (this.targetY < 1) {
+                if (this.targetY < ((ICubicWorld)getWorld()).getMinHeight() + 1) {
                     G_destroy();
                     PacketHandler.sendToAround(ModeMessage.create(this), getWorld(), getPos());
                     return true;
@@ -164,6 +176,18 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                 return true;
             case MAKEFRAME:
                 if (this.targetY < this.yMin) {
+
+                    //PUMP ONLY - make first frame ring
+                    if(this.pump != null) {
+                        TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                        if (te instanceof TilePump) {
+                            TilePump pumpTE = (TilePump) te;
+                            pumpTE.handleBorders(this, targetY);
+                        } else {
+                            this.pump = null;
+                        }
+                    }
+
                     setNow(MOVEHEAD);
                     G_renew_powerConfigure();
                     this.targetX = this.xMin + 1;
@@ -251,6 +275,27 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                         this.digged = false;
                     else {
                         this.targetY--;
+                        ICubicWorld cubicWorld = (ICubicWorld)getWorld();
+                        if(cubicWorld.isCubicWorld()) {
+                            int newY = cubicWorld.getCubeFromBlockCoords(new BlockPos(this.targetX, this.targetY, this.targetZ)).getY();
+                            int oldY = cubicWorld.getCubeFromBlockCoords(new BlockPos(this.targetX, this.targetY + 1, this.targetZ)).getY();
+                            if (newY < oldY) {
+                                //New layer started, so generate 1 layer ahead - this may lead to the topmost layer not being generated though so: TODO
+                                this.genLayer(newY - 1);
+                            }
+                        }
+
+                        //PUMP ONLY
+                        if(this.pump != null) {
+                            TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                            if (te instanceof TilePump) {
+                                TilePump pumpTE = (TilePump) te;
+                                pumpTE.handleBorders(this, targetY);
+                            } else {
+                                this.pump = null;
+                            }
+                        }
+
                         final double aa = S_getDistance(this.xMin + 1, this.targetY, this.zMin + out);
                         final double ad = S_getDistance(this.xMin + 1, this.targetY, this.zMax - out);
                         final double da = S_getDistance(this.xMax - 1, this.targetY, this.zMin + out);
@@ -279,6 +324,65 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                         }
                     }
                 }
+            }
+
+            //PUMP ONLY
+            //TODO ~~Marked for removal - DUPLICATE~~
+            if(this.pump != null) {
+                //Damming when touching the border
+                boolean xMinFlag = this.targetX == this.xMin + 1;
+                boolean xMaxFlag = this.targetX == this.xMax - 1;
+                boolean zMinFlag = this.targetZ == this.zMin + 1;
+                boolean zMaxFlag = this.targetZ == this.zMax - 1;
+                BlockPos targetPos = new BlockPos(this.targetX, this.targetY, this.targetZ);
+                TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                TilePump pumpTE;
+                if (te instanceof TilePump) {
+                    pumpTE = (TilePump) te;
+                } else {
+                    this.pump = null;
+                    return;
+                }
+
+                if (xMinFlag) { //-x
+                    pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.WEST));
+                    if (zMinFlag) { //-z, -x
+                        pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.NORTH).offset(EnumFacing.WEST));
+                    } else if (zMaxFlag) { //+z, -x
+                        pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.SOUTH).offset(EnumFacing.WEST));
+                    }
+                } else if (xMaxFlag) { //+x
+                    pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.EAST));
+                    if (zMinFlag) { //-z, +x
+                        pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.NORTH).offset(EnumFacing.EAST));
+                    } else if (zMaxFlag) { //+z, +x
+                        pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.SOUTH).offset(EnumFacing.EAST));
+                    }
+                }
+                if (zMinFlag) { //-z
+                    pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.NORTH));
+                } else if (zMaxFlag) { //+z
+                    pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.SOUTH));
+                }
+            }
+        }
+    }
+
+    /**
+     * Generates a layer of cubes for this quarry
+     * @param layerY the Y Coordinate of the layer to generate
+     */
+    private void genLayer(int layerY){
+        ICubicWorldServer serverWorld = (ICubicWorldServer)getWorld();
+        ICubeProviderServer cubeCache = serverWorld.getCubeCache();
+        ICube min = serverWorld.getCubeFromBlockCoords(getMinPos());
+        ICube max = serverWorld.getCubeFromBlockCoords(getMaxPos());
+
+        QuarryPlus.LOGGER.debug("[Quarry] Generating layer: {}", layerY);
+
+        for(int cntX = min.getX(); cntX <= max.getX(); cntX++){
+            for(int cntZ = min.getZ(); cntZ <= max.getZ(); cntZ++){
+                cubeCache.getCube(cntX, layerY, cntZ, ICubeProviderServer.Requirement.POPULATE);
             }
         }
     }

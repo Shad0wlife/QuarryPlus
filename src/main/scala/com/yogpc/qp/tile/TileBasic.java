@@ -35,6 +35,12 @@ import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.version.VersionUtil;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+
+import io.github.opencubicchunks.cubicchunks.api.util.CubePos;
+import io.github.opencubicchunks.cubicchunks.api.world.ICube;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubeProviderServer;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorldServer;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.enchantment.Enchantment;
@@ -110,6 +116,32 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
         }
     }
 
+    /**
+     * Gets the blockstate at a BlockPos, depending on world type
+     * @param targetPos The BlockPos from where the state is required
+     * @return the IBlockState at the BlockPos
+     */
+    protected IBlockState getBlockStateAt(BlockPos targetPos){
+        IBlockState targetState;
+        if(((ICubicWorld)getWorld()).isCubicWorld()){
+            //Get the cube and populate if neccessary
+            ICubicWorldServer serverWorld = (ICubicWorldServer)getWorld();
+            ICubeProviderServer cubeCache = serverWorld.getCubeCache();
+            CubePos cubePos = serverWorld.getCubeFromBlockCoords(targetPos).getCoords();
+            ICube cube = cubeCache.getCube(cubePos.getX(), cubePos.getY(), cubePos.getZ(), ICubeProviderServer.Requirement.POPULATE);
+            targetState = cube.getBlockState(targetPos);
+        }else{
+            //Vanilla way to the blockstate (see above)
+            Chunk targetChunk = getWorld().getChunkProvider().getLoadedChunk(targetPos.getX() >> 4, targetPos.getZ() >> 4);
+            if (targetChunk != null) {
+                targetState = targetChunk.getBlockState(targetPos);
+            } else {
+                targetState = getWorld().getBlockState(targetPos);
+            }
+        }
+        return targetState;
+    }
+
     protected boolean S_breakBlock(final int x, final int y, final int z) {
         final List<ItemStack> dropped = new LinkedList<>();
         Chunk loadedChunk = getWorld().getChunkProvider().getLoadedChunk(x >> 4, z >> 4);
@@ -129,7 +161,15 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
                 G_renew_powerConfigure();
                 return true;
             }
-            return ((TilePump) te).S_removeLiquids(this, x, y, z);
+            TilePump tp = (TilePump) te;;
+            tp.findLiquidsInLayer(this, x, y, z);
+            tp.S_removeLiquids(this);
+
+            if(tp.liquidsToRemove() > 0){
+                return false;
+            }else {
+                return true;
+            }
         }
         BI bi = S_addDroppedItems(dropped, blockState, pos);
         if (!PowerManager.useEnergyBreak(this, blockState.getBlockHardness(getWorld(), pos), bi.b, this.unbreaking))

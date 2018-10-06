@@ -19,12 +19,12 @@ import com.yogpc.qp.block.BlockMiningWell;
 import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.packet.TileMessage;
+import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.Chunk;
 import scala.Symbol;
 
 public class TileMiningWell extends TileBasic implements ITickable {
@@ -64,6 +64,18 @@ public class TileMiningWell extends TileBasic implements ITickable {
         super.update();
         if (!getWorld().isRemote && !machineDisabled) {
             int depth = getPos().getY() - 1;
+
+            //PUMP ONLY TODO testing
+            if(this.pump != null) {
+                TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                if (te instanceof TilePump) {
+                    TilePump pumpTE = (TilePump) te;
+                    pumpTE.handleBorders(this, depth);
+                } else {
+                    this.pump = null;
+                }
+            }
+
             while (!S_checkTarget(depth)) {
                 if (this.working)
                     getWorld().setBlockState(new BlockPos(getPos().getX(), depth, getPos().getZ()), QuarryPlusI.blockPlainPipe().getDefaultState());
@@ -81,19 +93,13 @@ public class TileMiningWell extends TileBasic implements ITickable {
     }
 
     private boolean S_checkTarget(final int depth) {
-        if (depth < 1) {
+        if (depth < ((ICubicWorld)getWorld()).getMinHeight() + 1) {
             G_destroy();
             finishWork();
             return true;
         }
         BlockPos pos = new BlockPos(getPos().getX(), depth, getPos().getZ());
-        Chunk loadedChunk = getWorld().getChunkProvider().getLoadedChunk(pos.getX() >> 4, pos.getZ() >> 4);
-        final IBlockState b;
-        if (loadedChunk != null) {
-            b = loadedChunk.getBlockState(pos);
-        } else {
-            b = getWorld().getBlockState(pos);
-        }
+        final IBlockState b = getBlockStateAt(pos);
         final float h = b.getBlockHardness(getWorld(), pos);
         if (h < 0 || b.getBlock() == QuarryPlusI.blockPlainPipe() || b.getBlock().isAir(b, getWorld(), pos)) {
             return false;

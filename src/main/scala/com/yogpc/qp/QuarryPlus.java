@@ -24,8 +24,6 @@ import com.yogpc.qp.gui.GuiHandler;
 import com.yogpc.qp.item.ItemTool;
 import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.tile.ItemDamage;
-import com.yogpc.qp.tile.TileAdvPump;
-import com.yogpc.qp.tile.TileAdvQuarry;
 import com.yogpc.qp.tile.TileBookMover;
 import com.yogpc.qp.tile.TileBreaker;
 import com.yogpc.qp.tile.TileExpPump;
@@ -162,8 +160,6 @@ public class QuarryPlus {
             blockController(),
             blockLaser(),
             blockRefinery(),
-            blockChunkdestroyer(),
-            blockStandalonePump(),
             blockBookMover(),
             blockExpPump(),
             blockSolidQuarry()
@@ -178,8 +174,6 @@ public class QuarryPlus {
         GameRegistry.registerTileEntity(TilePlacer.class, new ResourceLocation(modID, QuarryPlus.Names.placer));
         GameRegistry.registerTileEntity(TileBreaker.class, new ResourceLocation(modID, QuarryPlus.Names.breaker));
         GameRegistry.registerTileEntity(TileLaser.class, new ResourceLocation(modID, QuarryPlus.Names.laser));
-        GameRegistry.registerTileEntity(TileAdvQuarry.class, new ResourceLocation(modID, QuarryPlus.Names.advquarry));
-        GameRegistry.registerTileEntity(TileAdvPump.class, new ResourceLocation(modID, QuarryPlus.Names.advpump));
         GameRegistry.registerTileEntity(TileBookMover.class, new ResourceLocation(modID, QuarryPlus.Names.moverfrombook));
         GameRegistry.registerTileEntity(TileExpPump.class, new ResourceLocation(modID, QuarryPlus.Names.exppump));
         GameRegistry.registerTileEntity(TileSolidQuarry.class, new ResourceLocation(modID, QuarryPlus.Names.solidquarry));
@@ -201,8 +195,6 @@ public class QuarryPlus {
             blockController().itemBlock,
             blockLaser().itemBlock(),
             blockRefinery().itemBlock(),
-            blockChunkdestroyer().itemBlock(),
-            blockStandalonePump().itemBlock(),
             blockBookMover().itemBlock(),
             blockExpPump().itemBlock(),
             blockSolidQuarry().itemBlock(),
@@ -230,8 +222,6 @@ public class QuarryPlus {
         ModelLoader.setCustomModelResourceLocation(blockRefinery().itemBlock(), 0, proxy.fromEntry(blockRefinery()));
         ModelLoader.setCustomModelResourceLocation(blockController().itemBlock, 0, proxy.fromEntry(blockController()));
         ModelLoader.setCustomModelResourceLocation(blockLaser().itemBlock(), 0, proxy.fromEntry(blockLaser()));
-        ModelLoader.setCustomModelResourceLocation(blockChunkdestroyer().itemBlock(), 0, proxy.fromEntry(blockChunkdestroyer()));
-        ModelLoader.setCustomModelResourceLocation(blockStandalonePump().itemBlock(), 0, proxy.fromEntry(blockStandalonePump()));
         ModelLoader.setCustomModelResourceLocation(blockBookMover().itemBlock(), 0, proxy.fromEntry(blockBookMover()));
         ModelLoader.setCustomModelResourceLocation(blockExpPump().itemBlock(), 0, proxy.fromEntry(blockExpPump()));
         ModelLoader.setCustomModelResourceLocation(blockSolidQuarry().itemBlock(), 0, proxy.fromEntry(blockSolidQuarry()));
