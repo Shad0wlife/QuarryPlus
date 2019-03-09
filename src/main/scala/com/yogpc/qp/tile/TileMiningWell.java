@@ -27,11 +27,13 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
 import scala.Symbol;
 
+import static com.yogpc.qp.tile.IAttachment.Attachments.FLUID_PUMP;
 import static jp.t2v.lab.syntax.MapStreamSyntax.byEntry;
 import static jp.t2v.lab.syntax.MapStreamSyntax.entryToMap;
 
@@ -81,13 +83,13 @@ public class TileMiningWell extends TileBasic implements ITickable {
                     //Searches for damming positions around the mining pipe
                     //This is inefficient to do every time, but without it, the dam would only be built before minable layers
                     //Meaning that if the MW hits an air pocket and in the ring above were liquid, that wouldn't be dammed
-                    if(this.pump != null) {
-                        TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                    if (facingMap.containsKey(FLUID_PUMP)){
+                        TileEntity te = getWorld().getTileEntity(getPos().offset(facingMap.get(FLUID_PUMP)));
                         if (te instanceof TilePump) {
                             TilePump pumpTE = (TilePump) te;
                             pumpTE.discoverBorders(this, depth);
                         } else {
-                            this.pump = null;
+                            facingMap.remove(FLUID_PUMP);
                         }
                     }
                     depth--;
@@ -95,18 +97,18 @@ public class TileMiningWell extends TileBasic implements ITickable {
 
                 //PUMP ONLY TODO testing
                 //Dams all found damming position
-                if(this.pump != null) {
-                    TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                if (facingMap.containsKey(FLUID_PUMP)){
+                    TileEntity te = getWorld().getTileEntity(getPos().offset(facingMap.get(FLUID_PUMP)));
                     if (te instanceof TilePump) {
                         TilePump pumpTE = (TilePump) te;
                         pumpTE.damBorders(this);
                     } else {
-                        this.pump = null;
+                        facingMap.remove(FLUID_PUMP);
                     }
                 }
 
                 //Proceed to break next target block
-                S_breakBlock(getPos().getX(), depth, getPos().getZ());
+                S_breakBlock(getPos().getX(), depth, getPos().getZ(), Blocks.AIR.getDefaultState());
             }
             S_pollItems();
         }

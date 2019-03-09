@@ -41,6 +41,7 @@ import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.item.EntityXPOrb;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
@@ -115,9 +116,8 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                     break;
                 case MOVE_HEAD:
                     //Before moving and so on, first remove all water
-                    //TODO proper adressing
-                    if(this.pump != null){
-                        TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                    if (facingMap.containsKey(FLUID_PUMP)){
+                        TileEntity te = getWorld().getTileEntity(getPos().offset(facingMap.get(FLUID_PUMP)));
                         if(te instanceof TilePump) {
                             TilePump pumpTE = (TilePump)te;
                             //Dam the border ring if damming is required
@@ -125,7 +125,7 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                             //Remove liquids in mining area if there are any
                             pumpTE.S_removeLiquids(this);
                         }else{
-                            this.pump = null;
+                            facingMap.remove(FLUID_PUMP);
                         }
                     }
 
@@ -200,13 +200,13 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                 if (this.targetY < this.yMin) {
 
                     //PUMP ONLY - make first damming frame ring after finishing the actual frame
-                    if(this.pump != null) {
-                        TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                    if (facingMap.containsKey(FLUID_PUMP)){
+                        TileEntity te = getWorld().getTileEntity(getPos().offset(facingMap.get(FLUID_PUMP)));
                         if (te instanceof TilePump) {
                             TilePump pumpTE = (TilePump) te;
                             pumpTE.discoverBorders(this, targetY);
                         } else {
-                            this.pump = null;
+                            facingMap.remove(FLUID_PUMP);
                         }
                     }
 
@@ -315,13 +315,13 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
 
                         //PUMP ONLY
                         //New Y-Layer -> check the layer's borders for damming
-                        if(this.pump != null) {
-                            TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                        if (facingMap.containsKey(FLUID_PUMP)){
+                            TileEntity te = getWorld().getTileEntity(getPos().offset(facingMap.get(FLUID_PUMP)));
                             if (te instanceof TilePump) {
                                 TilePump pumpTE = (TilePump) te;
                                 pumpTE.discoverBorders(this, targetY);
                             } else {
-                                this.pump = null;
+                                facingMap.remove(FLUID_PUMP);
                             }
                         }
 

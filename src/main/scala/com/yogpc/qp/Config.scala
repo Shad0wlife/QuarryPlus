@@ -4,7 +4,7 @@ import java.io.File
 import java.nio.file.{Files, Path}
 import java.{lang, util}
 
-import com.yogpc.qp.tile.{TileAdvQuarry, WorkbenchRecipes}
+import com.yogpc.qp.tile.WorkbenchRecipes
 import com.yogpc.qp.utils.{BlockWrapper, ReflectionHelper}
 import net.minecraft.util.ResourceLocation
 import net.minecraftforge.common.MinecraftForge
@@ -179,17 +179,6 @@ object Config {
 
     val manuallyDefinedHidden: Boolean = configuration.hasCategory(CATEGORY_HIDDEN)
     val collectBedrock: Boolean = configuration.get(CATEGORY_HIDDEN, CollectBedrock_key, false, CollectBedrock_key).setShowInGui(false).getBoolean
-
-    import scala.collection.JavaConverters._
-
-    private val path: Path = configuration.getConfigFile.toPath.getParent.resolve(NO_DIG_BLOCK_PATH)
-    val noDigBLOCKS: Set[BlockWrapper] = if (Files.exists(path)) {
-      Try(BlockWrapper.getWrapper(Files.readAllLines(path).asScala.reduce(_ + _)))
-        .recover { case NonFatal(e) => e.printStackTrace(); TileAdvQuarry.noDigBLOCKS }.getOrElse(TileAdvQuarry.noDigBLOCKS)
-    } else {
-      Files.write(path, BlockWrapper.getString(TileAdvQuarry.noDigBLOCKS.toSeq).split(System.lineSeparator()).toSeq.asJava)
-      TileAdvQuarry.noDigBLOCKS
-    }
 
     def outputRecipeJson(): Unit = {
       val recipePath = configuration.getConfigFile.toPath.getParent.resolve("default" + RECIPE_DIRECTORY)
