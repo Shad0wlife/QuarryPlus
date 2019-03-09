@@ -3,7 +3,7 @@ package com.yogpc.qp.packet;
 import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.packet.controller.AvailableEntities;
 import com.yogpc.qp.packet.controller.SetEntity;
-import com.yogpc.qp.packet.distiller.AnimatonMessage;
+import com.yogpc.qp.packet.distiller.AnimationMessage;
 import com.yogpc.qp.packet.enchantment.BlockListRequestMessage;
 import com.yogpc.qp.packet.enchantment.DiffMessage;
 import com.yogpc.qp.packet.enchantment.EnchantmentMessage;
@@ -18,6 +18,7 @@ import com.yogpc.qp.packet.marker.RemoveLaser;
 import com.yogpc.qp.packet.marker.RemoveLink;
 import com.yogpc.qp.packet.pump.Mappings;
 import com.yogpc.qp.packet.pump.Now;
+import com.yogpc.qp.packet.quarry.LevelMessage;
 import com.yogpc.qp.packet.quarry.ModeMessage;
 import com.yogpc.qp.packet.quarry.MoveHead;
 import com.yogpc.qp.packet.workbench.WorkbenchMessage;
@@ -34,7 +35,7 @@ public class PacketHandler {
 
     public static void init() {
         wrapper = NetworkRegistry.INSTANCE.newSimpleChannel(QuarryPlus.modID);
-        IMessageHandler<IMessage, IMessage> handler = (message, ctx) -> message.onRecieve(message, ctx);
+        IMessageHandler<IMessage, IMessage> handler = (message, ctx) -> message.onReceive(message, ctx);
         int i = 0;
         wrapper.registerMessage(handler, TileMessage.class, i++, Side.CLIENT);
         wrapper.registerMessage(handler, TileMessage.class, i++, Side.SERVER);
@@ -63,12 +64,14 @@ public class PacketHandler {
         //quarry
         wrapper.registerMessage(handler, ModeMessage.class, i++, Side.CLIENT);
         wrapper.registerMessage(handler, MoveHead.class, i++, Side.CLIENT);
+        wrapper.registerMessage(handler, LevelMessage.class, i++, Side.CLIENT);
+        wrapper.registerMessage(handler, LevelMessage.class, i++, Side.SERVER);
         //laser
         wrapper.registerMessage(handler, LaserMessage.class, i++, Side.CLIENT);
         wrapper.registerMessage(handler, LaserAverageMessage.class, i++, Side.CLIENT);
         //distiller
-        wrapper.registerMessage(handler, AnimatonMessage.class, i++, Side.CLIENT);
-        //exppump
+        wrapper.registerMessage(handler, AnimationMessage.class, i++, Side.CLIENT);
+        //exp pump
         wrapper.registerMessage(handler, ExpPumpMessage.class, i++, Side.CLIENT);
         assert i > 0 : "Dummy Operation";
     }

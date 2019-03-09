@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import buildcraft.api.tiles.ITileAreaProvider;
@@ -34,12 +35,12 @@ import com.yogpc.qp.packet.marker.LinkRequest;
 import com.yogpc.qp.packet.marker.LinkUpdate;
 import com.yogpc.qp.packet.marker.RemoveLink;
 import com.yogpc.qp.render.Box;
+import com.yogpc.qp.utils.IndexOnlyList;
 import javax.annotation.Nullable;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.inventory.InventoryHelper;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
@@ -54,14 +55,14 @@ import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.ForgeChunkManager.Ticket;
 import net.minecraftforge.common.ForgeChunkManager.Type;
 import net.minecraftforge.common.capabilities.Capability;
-import net.minecraftforge.fml.common.ModAPIManager;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.Optional;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import scala.Symbol;
 
 @Optional.Interface(iface = "buildcraft.api.tiles.ITileAreaProvider", modid = QuarryPlus.Optionals.Buildcraft_tiles)
-public class TileMarker extends APacketTile implements ITileAreaProvider, ITickable, IChunkLoadTile, IDebugSender {
+public class TileMarker extends APacketTile implements ITileAreaProvider, ITickable, IChunkLoadTile, IDebugSender, IMarker {
     public static final List<Link> linkList = Collections.synchronizedList(new ArrayList<>());
     public static final List<Laser> laserList = Collections.synchronizedList(new ArrayList<>());
     public static final IndexOnlyList<Link> LINK_INDEX = new IndexOnlyList<>(linkList, linkList);
@@ -72,7 +73,8 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
     private final boolean bcLoaded;
 
     public TileMarker() {
-        this.bcLoaded = ModAPIManager.INSTANCE.hasAPI(QuarryPlus.Optionals.Buildcraft_tiles);
+        // TODO change to net.minecraftforge.fml.common.ModAPIManager
+        this.bcLoaded = Loader.isModLoaded(QuarryPlus.Optionals.Buildcraft_tiles);
     }
 
     @Override
@@ -80,7 +82,9 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
         return SYMBOL;
     }
 
+    @Nullable
     public Link link;
+    @Nullable
     public Laser laser;
 
     @Override
@@ -97,6 +101,11 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
             if (this.getWorld().isRemote)
                 PacketHandler.sendToServer(LinkRequest.create(this));
         }
+    }
+
+    @Override
+    public boolean hasLink() {
+        return link != null && link.xMin != link.xMax && link.zMin != link.zMax;
     }
 
     @Override
@@ -122,6 +131,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
         }
     }
 
+    @Override
     public List<ItemStack> removeFromWorldWithItem() {
         if (this.link != null)
             return this.link.removeConnection(true);
@@ -248,13 +258,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
         if (this.chunkTicket != null)
             return;
         this.chunkTicket = ForgeChunkManager.requestTicket(QuarryPlus.INSTANCE, this.getWorld(), Type.NORMAL);
-        if (this.chunkTicket == null)
-            return;
-        final NBTTagCompound tag = this.chunkTicket.getModData();
-        tag.setInteger("quarryX", getPos().getX());
-        tag.setInteger("quarryY", getPos().getY());
-        tag.setInteger("quarryZ", getPos().getZ());
-        forceChunkLoading(this.chunkTicket);
+        setTileData(this.chunkTicket, getPos());
     }
 
     @Override
@@ -326,11 +330,8 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
             if (xFlag && yFlag && zFlag) {
                 return false;
             }
-            for (BlockPos p : PositionUtil.getCorners(min(), max())) {
-                if (PositionUtil.isNextTo(p, pos)) {
-                    return true;
-                }
-            }
+            Predicate<BlockPos> predicate = p -> PositionUtil.isNextTo(p, pos);
+            return PositionUtil.getCorners(min(), max()).stream().anyMatch(predicate);
         }
         return false;
     }
@@ -341,7 +342,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
     }
 
     @Override
-    public List<? extends ITextComponent> getDebugmessages() {
+    public List<? extends ITextComponent> getDebugMessages() {
         return Arrays.asList(new TextComponentString("Link : " + link),
             new TextComponentString("Laser : " + laser));
     }
@@ -369,6 +370,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
          * index 0=x , 1=y , 2=z
          */
         public final AxisAlignedBB[] lineBoxes = new AxisAlignedBB[6];
+        @Nullable
         public final Box[] boxes;
 
         public Laser(World w, BlockPos pos, Link link) {
@@ -395,7 +397,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
             }
             if (pw.isRemote && !Config.content().disableRendering()) {
                 boxes = Arrays.stream(lineBoxes).filter(nonNull)
-                    .map(aabb -> Box.apply(aabb, 1d / 8d, 1d / 8d, 1d / 8d, false, false))
+                    .map(range -> Box.apply(range, 1d / 8d, 1d / 8d, 1d / 8d, false, false))
                     .toArray(Box[]::new);
             } else {
                 //Server
@@ -435,6 +437,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
     public static class Link {
         public int xMax, xMin, yMax, yMin, zMax, zMin;
         public final AxisAlignedBB[] lineBoxes = new AxisAlignedBB[12];
+        @Nullable // Null in server world.
         public Box[] boxes;
         public final World w;
 
@@ -447,13 +450,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
         }
 
         Link(final World pw, final int vx, final int vy, final int vz) {
-            this.xMax = vx;
-            this.xMin = vx;
-            this.yMax = vy;
-            this.yMin = vy;
-            this.zMax = vz;
-            this.zMin = vz;
-            this.w = pw;
+            this(pw, vx, vx, vy, vy, vz, vz);
         }
 
         Link(final World pw, final int vxx, final int vxn, final int vyx, final int vyn, final int vzx, final int vzn) {
@@ -562,7 +559,7 @@ public class TileMarker extends APacketTile implements ITileAreaProvider, ITicka
             }
             if (w.isRemote) {
                 boxes = Arrays.stream(lineBoxes).filter(nonNull)
-                    .map(aabb -> Box.apply(aabb, 1d / 8d, 1d / 8d, 1d / 8d, false, false))
+                    .map(range -> Box.apply(range, 1d / 8d, 1d / 8d, 1d / 8d, false, false))
                     .toArray(Box[]::new);
             } else {
                 boxes = null;

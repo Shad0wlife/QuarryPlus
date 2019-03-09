@@ -13,41 +13,48 @@
 
 package com.yogpc.qp.tile;
 
+import java.util.Map;
+import java.util.Optional;
+
 import com.yogpc.qp.PowerManager;
 import com.yogpc.qp.QuarryPlusI;
 import com.yogpc.qp.block.BlockMiningWell;
+import com.yogpc.qp.compat.InvUtils;
 import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.packet.TileMessage;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ITickable;
 import net.minecraft.util.math.BlockPos;
 import scala.Symbol;
 
+import static jp.t2v.lab.syntax.MapStreamSyntax.byEntry;
+import static jp.t2v.lab.syntax.MapStreamSyntax.entryToMap;
+
 public class TileMiningWell extends TileBasic implements ITickable {
     public static final scala.Symbol SYMBOL = scala.Symbol.apply("MiningwellPlus");
 
-    public boolean working;
+    private boolean working;
 
     @Override
     public void G_renew_powerConfigure() {
         byte pmp = 0;
-        if (hasWorld() && this.pump != null) {
-            final TileEntity te = getWorld().getTileEntity(getPos().offset(pump));
-            if (te instanceof TilePump)
-                pmp = ((TilePump) te).unbreaking;
-            else
-                this.pump = null;
+        if (hasWorld()) {
+            Map<IAttachment.Attachments<?>, EnumFacing> map = facingMap.entrySet().stream()
+                .filter(byEntry((attachments, facing) -> attachments.test(getWorld().getTileEntity(getPos().offset(facing)))))
+                .collect(entryToMap());
+            facingMap.putAll(map);
+            pmp = Optional.ofNullable(facingMap.get(IAttachment.Attachments.FLUID_PUMP))
+                .map(getPos()::offset)
+                .map(getWorld()::getTileEntity)
+                .flatMap(IAttachment.Attachments.FLUID_PUMP)
+                .map(p -> p.unbreaking).orElse((byte) 0);
         }
-        if (hasWorld() && exppump != null) {
-            TileEntity entity = getWorld().getTileEntity(getPos().offset(exppump));
-            if (!(entity instanceof TileExpPump)) {
-                exppump = null;
-            }
-        }
+
         if (this.working)
             PowerManager.configureMiningWell(this, this.efficiency, this.unbreaking, pmp);
         else
@@ -111,41 +118,44 @@ public class TileMiningWell extends TileBasic implements ITickable {
     }
 
     private boolean S_checkTarget(final int depth) {
-        if (depth < ((ICubicWorld)getWorld()).getMinHeight() + 1) {
+        //TODO handle yLevel default
+        //if (depth < ((ICubicWorld)getWorld()).getMinHeight() + 1) {
+        if (depth < yLevel) {
             G_destroy();
             finishWork();
             return true;
         }
         BlockPos pos = new BlockPos(getPos().getX(), depth, getPos().getZ());
+        //final IBlockState b = getWorld().getBlockState(pos); TODO
         final IBlockState b = getBlockStateAt(pos);
         final float h = b.getBlockHardness(getWorld(), pos);
         if (h < 0 || b.getBlock() == QuarryPlusI.blockPlainPipe() || b.getBlock().isAir(b, getWorld(), pos)) {
             return false;
         }
-        if (this.pump == null && b.getMaterial().isLiquid())
+        if (!facingMap.containsKey(IAttachment.Attachments.FLUID_PUMP) && b.getMaterial().isLiquid())
             return false;
         if (!this.working) {
             //Find something to break!
-            G_reinit();
+            G_ReInit();
         }
         return true;
     }
 
     @Override
-    public void readFromNBT(final NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        setWorking(nbttc.getBoolean("working"));
+    public void readFromNBT(final NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        setWorking(nbt.getBoolean("working"));
         G_renew_powerConfigure();
     }
 
     @Override
-    public NBTTagCompound writeToNBT(final NBTTagCompound nbttc) {
-        nbttc.setBoolean("working", this.working);
-        return super.writeToNBT(nbttc);
+    public NBTTagCompound writeToNBT(final NBTTagCompound nbt) {
+        nbt.setBoolean("working", this.working);
+        return super.writeToNBT(nbt);
     }
 
     @Override
-    public void G_reinit() {
+    public void G_ReInit() {
         setWorking(true);
         G_renew_powerConfigure();
         if (!getWorld().isRemote)
@@ -158,26 +168,27 @@ public class TileMiningWell extends TileBasic implements ITickable {
             working = false; //TODO method cause loop. -> check.
             G_renew_powerConfigure();
             PacketHandler.sendToAround(TileMessage.create(this), getWorld(), getPos());
-            BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(getPos());
-            for (int depth = getPos().getY() - 1; depth > 0; depth--) {
-                pos.setY(depth);
-                if (getWorld().getBlockState(pos).getBlock() != QuarryPlusI.blockPlainPipe())
-                    break;
-                getWorld().setBlockToAir(pos);
-            }
+            removePipes();
         }
     }
 
-    public void setWorking(boolean working) {
+    public void removePipes() {
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(getPos());
+        for (int depth = getPos().getY() - 1; depth > 0; depth--) {
+            pos.setY(depth);
+            if (getWorld().getBlockState(pos).getBlock() != QuarryPlusI.blockPlainPipe())
+                break;
+            getWorld().setBlockToAir(pos);
+        }
+    }
+
+    private void setWorking(boolean working) {
         this.working = working;
         if (working)
             startWork();
         if (hasWorld()) {
             IBlockState old = getWorld().getBlockState(getPos());
-            validate();
-            getWorld().setBlockState(getPos(), old.withProperty(BlockMiningWell.ACTING, working));
-            validate();
-            getWorld().setTileEntity(getPos(), this);
+            InvUtils.setNewState(getWorld(), getPos(), this, old.withProperty(BlockMiningWell.ACTING, working));
         }
     }
 

@@ -23,6 +23,7 @@ import com.yogpc.qp.compat.BuildcraftHelper;
 import com.yogpc.qp.compat.InvUtils;
 import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.item.ItemBlockEnchantable;
+import com.yogpc.qp.item.ItemTool;
 import com.yogpc.qp.tile.IEnchantableTile;
 import com.yogpc.qp.tile.TileQuarry;
 import com.yogpc.qp.version.VersionUtil;
@@ -33,7 +34,6 @@ import net.minecraft.block.state.BlockStateContainer;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
@@ -64,13 +64,7 @@ public class BlockQuarry extends ADismCBlock {
         if (!worldIn.isRemote) { // Always true.
             TileQuarry tile = (TileQuarry) worldIn.getTileEntity(pos);
             if (tile != null) {
-                final int count = quantityDropped(state, 0, worldIn.rand);
-                final Item it = getItemDropped(state, worldIn.rand, 0);
-                for (int i = 0; i < count; i++) {
-                    final ItemStack is = new ItemStack(it, 1, damageDropped(state));
-                    IEnchantableTile.Util.enchantmentToIS(tile, is);
-                    this.drops.add(is);
-                }
+                addEnchantedItem(worldIn, state, tile, this.drops);
             }
         }
         super.breakBlock(worldIn, pos, state);
@@ -87,18 +81,20 @@ public class BlockQuarry extends ADismCBlock {
         ItemStack stack = playerIn.getHeldItem(hand);
         if (InvUtils.isDebugItem(playerIn, hand)) return true;
         if (BuildcraftHelper.isWrench(playerIn, hand, stack, new RayTraceResult(new Vec3d(hitX, hitY, hitZ), facing, pos))) {
-            Optional.ofNullable((TileQuarry) worldIn.getTileEntity(pos)).ifPresent(TileQuarry::G_reinit);
+            Optional.ofNullable((TileQuarry) worldIn.getTileEntity(pos)).ifPresent(TileQuarry::G_ReInit);
             return true;
         }
         if (!worldIn.isRemote) {
             TileEntity t = worldIn.getTileEntity(pos);
             if (t != null) {
                 TileQuarry quarry = (TileQuarry) t;
-                if (stack.getItem() == QuarryPlusI.itemTool() && stack.getItemDamage() == 0) {
+                if (stack.getItem() == QuarryPlusI.itemTool() && stack.getItemDamage() == ItemTool.meta_StatusChecker()) {
                     quarry.sendEnchantMassage(playerIn);
                     VersionUtil.sendMessage(playerIn, new TextComponentTranslation(TranslationKeys.CURRENT_MODE,
                         new TextComponentTranslation(quarry.filler ? TranslationKeys.FILLER_MODE : TranslationKeys.QUARRY_MODE)));
-                } else if (quarry.G_getNow() == TileQuarry.Mode.NOTNEEDBREAK) {
+                } else if (stack.getItem() == QuarryPlusI.itemTool() && stack.getItemDamage() == ItemTool.meta_YSetter()) {
+                    playerIn.openGui(QuarryPlus.instance(), QuarryPlusI.guiIdQuarryYLevel(), worldIn, pos.getX(), pos.getY(), pos.getZ());
+                } else if (quarry.G_getNow() == TileQuarry.Mode.NOT_NEED_BREAK) {
                     quarry.filler = !quarry.filler;
                     VersionUtil.sendMessage(playerIn, new TextComponentTranslation(TranslationKeys.CHANGEMODE,
                         new TextComponentTranslation(quarry.filler ? TranslationKeys.FILLER_MODE : TranslationKeys.QUARRY_MODE)));
@@ -114,24 +110,9 @@ public class BlockQuarry extends ADismCBlock {
         if (!worldIn.isRemote) {
             EnumFacing facing = get2dOrientation(placer.posX, placer.posZ, pos.getX(), pos.getZ()).getOpposite();
             worldIn.setBlockState(pos, state.withProperty(FACING, facing), 2);
-            Consumer<TileQuarry> consumer = quarry -> IEnchantableTile.Util.init(quarry, stack.getEnchantmentTagList());
+            Consumer<TileQuarry> consumer = IEnchantableTile.Util.initConsumer(stack);
             Optional.ofNullable((TileQuarry) worldIn.getTileEntity(pos)).ifPresent(consumer.andThen(TileQuarry.requestTicket));
         }
-    }
-
-    private static EnumFacing get2dOrientation(final double x1, final double z1, final double x2, final double z2) {
-        final double Dx = x1 - x2;
-        final double Dz = z1 - z2;
-        final double angle = Math.atan2(Dz, Dx) / Math.PI * 180 + 180;
-
-        if (angle < 45 || angle > 315)
-            return EnumFacing.EAST;
-        else if (angle < 135)
-            return EnumFacing.SOUTH;
-        else if (angle < 225)
-            return EnumFacing.WEST;
-        else
-            return EnumFacing.NORTH;
     }
 
     @Override

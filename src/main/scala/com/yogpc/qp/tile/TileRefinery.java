@@ -25,11 +25,12 @@ import buildcraft.api.recipes.BuildcraftRecipeRegistry;
 import buildcraft.api.recipes.IRefineryRecipeManager;
 import com.yogpc.qp.Config;
 import com.yogpc.qp.PowerManager;
-import com.yogpc.qp.compat.INBTWritable;
+import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.item.ItemQuarryDebug;
 import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.packet.TileMessage;
-import com.yogpc.qp.packet.distiller.AnimatonMessage;
+import com.yogpc.qp.packet.distiller.AnimationMessage;
+import com.yogpc.qp.utils.INBTWritable;
 import javax.annotation.Nullable;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumFacing;
@@ -41,9 +42,12 @@ import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.FluidTankProperties;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidTankProperties;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 import scala.Symbol;
+
+import static jp.t2v.lab.syntax.MapStreamSyntax.always_false;
 
 /**
  * See {@link buildcraft.factory.tile.TileDistiller_BC8}, {@link buildcraft.api.recipes.IRefineryRecipeManager}, {@link buildcraft.energy.BCEnergyRecipes}
@@ -60,9 +64,12 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
     };
 
     public long rem_energy;
+    @Nullable
     public FluidStack cacheIn;
+    @Nullable
     public FluidStack cachedGas;
-    public FluidStack cachedLiqud;
+    @Nullable
+    public FluidStack cachedLiquid;
     public long cacheEnergy;
 
     private DEnch ench = DEnch.defaultEnch;
@@ -74,10 +81,11 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
         if (!machineDisabled) {
             horizontalsTank.predicate = fluidStack -> BuildcraftRecipeRegistry.refineryRecipes.getDistillationRegistry().getRecipeForInput(fluidStack) != null;
         } else {
-            horizontalsTank.predicate = fluidStack -> false;
+            horizontalsTank.predicate = always_false();
         }
         upTank.setCanFill(false);
         downTank.setCanFill(false);
+        bcLoaded = Loader.isModLoaded(QuarryPlus.Optionals.Buildcraft_factory_modID);
     }
 
     @Override
@@ -86,36 +94,36 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
     }
 
     @Override
-    public void G_reinit() {
+    public void G_ReInit() {
         PowerManager.configureRefinery(this, ench.efficiency, ench.unbreaking);
         tanks.forEach(distillerTank -> distillerTank.setCapacity(ench.getCapacity()));
     }
 
     @Override
-    public void readFromNBT(final NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        this.ench = DEnch.readFromNBT(nbttc);
-        horizontalsTank.readFromNBT(nbttc);
-        upTank.readFromNBT(nbttc);
-        downTank.readFromNBT(nbttc);
+    public void readFromNBT(final NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        this.ench = DEnch.readFromNBT(nbt);
+        horizontalsTank.readFromNBT(nbt);
+        upTank.readFromNBT(nbt);
+        downTank.readFromNBT(nbt);
         updateRecipe();
-        this.rem_energy = nbttc.getLong("rem_energy");
-        this.animationSpeed = nbttc.getFloat("animationSpeed");
-        this.animationStage = nbttc.getInteger("animationStage");
+        this.rem_energy = nbt.getLong("rem_energy");
+        this.animationSpeed = nbt.getFloat("animationSpeed");
+        this.animationStage = nbt.getInteger("animationStage");
         PowerManager.configureRefinery(this, ench.efficiency, ench.unbreaking);
         tanks.forEach(distillerTank -> distillerTank.setCapacity(ench.getCapacity()));
     }
 
     @Override
-    public NBTTagCompound writeToNBT(final NBTTagCompound nbttc) {
-        ench.writeToNBT(nbttc);
-        horizontalsTank.writeToNBT(nbttc);
-        upTank.writeToNBT(nbttc);
-        downTank.writeToNBT(nbttc);
-        nbttc.setLong("rem_energy", this.rem_energy);
-        nbttc.setFloat("animationSpeed", this.animationSpeed);
-        nbttc.setInteger("animationStage", this.animationStage);
-        return super.writeToNBT(nbttc);
+    public NBTTagCompound writeToNBT(final NBTTagCompound nbt) {
+        ench.writeToNBT(nbt);
+        horizontalsTank.writeToNBT(nbt);
+        upTank.writeToNBT(nbt);
+        downTank.writeToNBT(nbt);
+        nbt.setLong("rem_energy", this.rem_energy);
+        nbt.setFloat("animationSpeed", this.animationSpeed);
+        nbt.setInteger("animationStage", this.animationStage);
+        return super.writeToNBT(nbt);
     }
 
     @Override
@@ -128,11 +136,11 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
         }
         if (getWorld().getTotalWorldTime() % 20 == 7)
             PacketHandler.sendToAround(TileMessage.create(this), getWorld(), getPos());
-        if (this.cachedGas == null || cachedLiqud == null) {
+        if (this.cachedGas == null || cachedLiquid == null) {
             decreaseAnimation();
             return;
         }
-        double v = MjReciever.getMJfrommicro(cacheEnergy);
+        double v = MjReceiver.getMJFromMicro(cacheEnergy);
         if (cacheIn == null || (!Config.content().noEnergy() && getStoredEnergy() < v) ||
             !PowerManager.useEnergyRefinery(this, v, ench.unbreaking, ench.efficiency)) {
             decreaseAnimation();
@@ -140,15 +148,15 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
             increaseAnimation();
             FluidStack inStack = horizontalsTank.drainInternal(cacheIn.amount, false);
             int gas = upTank.fillInternal(cachedGas, false);
-            int liquid = downTank.fillInternal(cachedLiqud, false);
+            int liquid = downTank.fillInternal(cachedLiquid, false);
 
             if (inStack != null && inStack.amount > 0 && gas > 0 && liquid > 0) {
                 horizontalsTank.drainInternal(cacheIn.amount, true);
                 upTank.fillInternal(cachedGas, true);
-                downTank.fillInternal(cachedLiqud, true);
+                downTank.fillInternal(cachedLiquid, true);
                 this.cacheIn = null;
                 this.cachedGas = null;
-                this.cachedLiqud = null;
+                this.cachedLiquid = null;
                 this.cacheEnergy = 0L;
                 updateRecipe();
             }
@@ -168,7 +176,7 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
                 BuildcraftRecipeRegistry.refineryRecipes.getDistillationRegistry().getRecipeForInput(horizontalsTank.getFluid());
             if (recipe != null) {
                 cacheIn = recipe.in();
-                cachedLiqud = recipe.outLiquid();
+                cachedLiquid = recipe.outLiquid();
                 cachedGas = recipe.outGas();
                 cacheEnergy = recipe.powerRequired();
             }
@@ -190,7 +198,7 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
     }
 
     private void sendNowPacket() {
-        PacketHandler.sendToAround(AnimatonMessage.create(this), getWorld(), getPos());
+        PacketHandler.sendToAround(AnimationMessage.create(this), getWorld(), getPos());
     }
 
     private void increaseAnimation() {
@@ -238,7 +246,7 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
     }
 
     @Override
-    public void setEnchantent(final short id, final short val) {
+    public void setEnchantment(final short id, final short val) {
         ench = ench.copy(id, val);
     }
 
@@ -275,11 +283,11 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
     @Override
     public void getDebugInfo(List<String> left, List<String> right, EnumFacing side) {
         left.add(getClass().getName());
-        left.add(ItemQuarryDebug.tileposToString(this).getText());
-        left.add(ItemQuarryDebug.energyToString(this).getText());
+        left.add(ItemQuarryDebug.tilePosToString(this).getUnformattedComponentText());
+        left.add(ItemQuarryDebug.energyToString(this).getUnformattedComponentText());
         if (cacheIn != null) left.add("InputRecipe : " + cacheIn.getFluid().getName());
         if (cachedGas != null) left.add("OutGas : " + cachedGas.getFluid().getName());
-        if (cachedLiqud != null) left.add("OutLiquid : " + cachedLiqud.getFluid().getName());
+        if (cachedLiquid != null) left.add("OutLiquid : " + cachedLiquid.getFluid().getName());
     }
 
     @Override
@@ -298,7 +306,7 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
 
     public class DistillerTank extends FluidTank {
         private final String name;
-        private Predicate<FluidStack> predicate = fluidStack -> false;
+        private Predicate<FluidStack> predicate = always_false();
 
         public DistillerTank(String name) {
             super(4 * Fluid.BUCKET_VOLUME);
@@ -362,7 +370,7 @@ public class TileRefinery extends APowerTile implements IEnchantableTile {
         private final byte fortune;
         private final boolean silktouch;
 
-        public DEnch(int efficiency, int unbreaking, int fortune, boolean silktouch) {
+        DEnch(int efficiency, int unbreaking, int fortune, boolean silktouch) {
             this.efficiency = (byte) efficiency;
             this.unbreaking = (byte) unbreaking;
             this.fortune = (byte) fortune;

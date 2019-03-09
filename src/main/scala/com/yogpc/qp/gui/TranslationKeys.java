@@ -9,6 +9,7 @@ import com.yogpc.qp.QuarryPlus;
 import static jp.t2v.lab.syntax.MapStreamSyntax.entryToMap;
 import static jp.t2v.lab.syntax.MapStreamSyntax.valuesInt;
 
+@SuppressWarnings("SpellCheckingInspection")
 public class TranslationKeys {
     public static final String ADD = "tof.addnewore";
     public static final String ADD_FLUID_SURE = "tof.addfluidsure";
@@ -55,6 +56,7 @@ public class TranslationKeys {
     public static final String TOF_INCLUDE = "tof.include";
     public static final String UP = "FD.up";
     public static final String WEST = "FD.west";
+    public static final String Y_LEVEL = "chat.ylevel";
     public static final String YOG_SPAWNER_SETTING = "yog.spanwer.setting";
 
     public static final String advpump = "tile." + QuarryPlus.Names.advpump + ".name";

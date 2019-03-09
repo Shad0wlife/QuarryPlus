@@ -20,6 +20,7 @@ import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.QuarryPlusI;
 import com.yogpc.qp.compat.BuildcraftHelper;
 import com.yogpc.qp.item.ItemBlockEnchantable;
+import com.yogpc.qp.item.ItemTool;
 import com.yogpc.qp.tile.IEnchantableTile;
 import com.yogpc.qp.tile.TileMiningWell;
 import net.minecraft.block.Block;
@@ -57,14 +58,17 @@ public class BlockMiningWell extends ADismCBlock {
                                     EnumHand hand, EnumFacing facing, float hitX, float hitY, float hitZ) {
         ItemStack stack = playerIn.getHeldItem(hand);
         if (BuildcraftHelper.isWrench(playerIn, hand, stack, new RayTraceResult(new Vec3d(hitX, hitY, hitZ), facing, pos))) {
-            Optional.ofNullable((TileMiningWell) worldIn.getTileEntity(pos)).ifPresent(TileMiningWell::G_reinit);
+            Optional.ofNullable((TileMiningWell) worldIn.getTileEntity(pos)).ifPresent(TileMiningWell::G_ReInit);
             return true;
         }
-        if (stack.getItem() == QuarryPlusI.itemTool() && stack.getItemDamage() == 0) {
+        if (stack.getItem() == QuarryPlusI.itemTool() && stack.getItemDamage() == ItemTool.meta_StatusChecker()) {
             if (!worldIn.isRemote) {
                 Optional.ofNullable((IEnchantableTile) worldIn.getTileEntity(pos)).ifPresent(t ->
                     t.sendEnchantMassage(playerIn));
             }
+            return true;
+        } else if (stack.getItem() == QuarryPlusI.itemTool() && stack.getItemDamage() == ItemTool.meta_YSetter()) {
+            playerIn.openGui(QuarryPlus.instance(), QuarryPlusI.guiIdQuarryYLevel(), worldIn, pos.getX(), pos.getY(), pos.getZ());
             return true;
         }
         return super.onBlockActivated(worldIn, pos, state, playerIn, hand, facing, hitX, hitY, hitZ);
@@ -80,23 +84,8 @@ public class BlockMiningWell extends ADismCBlock {
         if (!worldIn.isRemote) {
             EnumFacing facing = get2dOrientation(placer.posX, placer.posZ, pos.getX(), pos.getZ()).getOpposite();
             worldIn.setBlockState(pos, state.withProperty(FACING, facing), 2);
-            Optional.ofNullable((IEnchantableTile) worldIn.getTileEntity(pos)).ifPresent(t -> IEnchantableTile.Util.init(t, stack.getEnchantmentTagList()));
+            Optional.ofNullable((IEnchantableTile) worldIn.getTileEntity(pos)).ifPresent(IEnchantableTile.Util.initConsumer(stack));
         }
-    }
-
-    private static EnumFacing get2dOrientation(final double x1, final double z1, final double x2, final double z2) {
-        final double Dx = x1 - x2;
-        final double Dz = z1 - z2;
-        final double angle = Math.atan2(Dz, Dx) / Math.PI * 180 + 180;
-
-        if (angle < 45 || angle > 315)
-            return EnumFacing.EAST;
-        else if (angle < 135)
-            return EnumFacing.SOUTH;
-        else if (angle < 225)
-            return EnumFacing.WEST;
-        else
-            return EnumFacing.NORTH;
     }
 
     @Override
@@ -105,6 +94,7 @@ public class BlockMiningWell extends ADismCBlock {
         if (!worldIn.isRemote) {
             TileMiningWell tile = (TileMiningWell) worldIn.getTileEntity(pos);
             if (tile != null) {
+                tile.removePipes();
                 final int count = quantityDropped(state, 0, worldIn.rand);
                 final Item it = getItemDropped(state, worldIn.rand, 0);
                 for (int i = 0; i < count; i++) {

@@ -2,10 +2,10 @@ package com.yogpc.qp.packet.enchantment;
 
 import java.io.IOException;
 
-import com.yogpc.qp.BlockData;
 import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.packet.IMessage;
 import com.yogpc.qp.tile.TileBasic;
+import com.yogpc.qp.utils.BlockData;
 import com.yogpc.qp.version.VersionUtil;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.init.Enchantments;
@@ -53,7 +53,7 @@ public class EnchantmentMessage implements IMessage {
     }
 
     @Override
-    public IMessage onRecieve(IMessage message, MessageContext ctx) {
+    public IMessage onReceive(IMessage message, MessageContext ctx) {
         World world = QuarryPlus.proxy.getPacketWorld(ctx.netHandler);
         MinecraftServer server = world.getMinecraftServer();
         if (world.provider.getDimension() == dim && server != null) {

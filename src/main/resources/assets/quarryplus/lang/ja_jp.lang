@@ -19,6 +19,8 @@ tile.standalonepump.name=自立改良型ポンプ
 tile.workbenchplus.name=改良型作業台
 tile.enchantmoverfrombook.name=エンチャント移動機2
 tile.solidquarry.name=固体燃料採掘機
+tile.quarryplus.dummyblock.name=Dummy Block
+tile.quarryreplacer.name=採掘機用置き換え機
 item.dimensionmirror.name=世界の鏡
 item.electric_armor.name=改良型電動防具
 item.liquidselector.name=液体選択用具
@@ -27,6 +29,7 @@ item.magicmirror.name=魔法の鏡
 item.overworldmirror.name=地上の鏡
 item.quarrydebug.name=改良型状態確認用具(デバッグ用)
 item.statuschecker.name=状態確認用具
+item.y_setter.name=採掘機レベル設定用具
 
 chat.changemode=動作モードを%sに切り替えました
 chat.currentmode=現在%sで動作しています
@@ -41,6 +44,7 @@ chat.pumpcontain=---- この改良型ポンプは下記の液体を保有して�
 chat.pumpcontainno=---- この改良型ポンプは液体を保有していません
 chat.pumpmapping=---- 方角と液体の関連付けの一覧
 chat.quarrymode=クァーリーモード
+chat.ylevel=この機械はy=%sまで採掘します。
 container.yog.basic=入出力バッファ
 FD.down=下
 FD.east=東
@@ -100,4 +104,4 @@ yog.pump.liquid=-    %s: %smB
 yog.spanwer.setting=隣接したスポーナーからスポーンさせる生物を選択してください
 
 quarryplus.machines.tooltip=機械の設定
-
+quarryplus.client.tooltip=クライアントの設定

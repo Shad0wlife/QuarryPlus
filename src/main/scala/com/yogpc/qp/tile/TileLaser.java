@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import buildcraft.api.mj.ILaserTarget;
 import buildcraft.api.mj.MjAPI;
@@ -31,6 +32,7 @@ import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.packet.laser.LaserAverageMessage;
 import com.yogpc.qp.packet.laser.LaserMessage;
+import jp.t2v.lab.syntax.MapStreamSyntax;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
@@ -64,7 +66,7 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
 
     public TileLaser() {
         PowerManager.configureLaser(this, this.efficiency, this.unbreaking);
-        bcLoaded = Loader.isModLoaded(QuarryPlus.Optionals.Buildcraft_modID);
+        bcLoaded = Loader.isModLoaded(QuarryPlus.Optionals.Buildcraft_silicon_modID);
     }
 
     @Override
@@ -91,10 +93,10 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
         }
 
         if (!targets.isEmpty()) {
-            long maxPower = (long) (PowerManager.simurateEnergyLaser(this, this.unbreaking, this.fortune, this.silktouch, this.efficiency) * MjAPI.MJ);
+            long maxPower = (long) (PowerManager.simulateEnergyLaser(this, this.unbreaking, this.fortune, this.silktouch, this.efficiency) * MjAPI.MJ);
             List<ILaserTarget> targetList = targets.stream()
                 .map(getWorld()::getTileEntity)
-                .map(ILaserTarget.class::cast)
+                .flatMap(MapStreamSyntax.streamCast(ILaserTarget.class))
                 .filter(t -> !Objects.requireNonNull(t).isInvalidTarget() && t.getRequiredLaserPower() > 0)
                 .collect(Collectors.toList());
             if (!targetList.isEmpty()) {
@@ -164,15 +166,12 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
         }
 
         this.targets.clear();
-        BlockPos.getAllInBoxMutable(new BlockPos(minX, minY, minZ), new BlockPos(maxX, maxY, maxZ)).forEach(mutableBlockPos -> {
-            TileEntity tileEntity = getWorld().getTileEntity(mutableBlockPos);
-            if (tileEntity instanceof ILaserTarget) {
-                ILaserTarget target = (ILaserTarget) tileEntity;
-                if (!target.isInvalidTarget() && target.getRequiredLaserPower() > 0) {
-                    targets.add(mutableBlockPos.toImmutable());
-                }
-            }
-        });
+        StreamSupport.stream(BlockPos.getAllInBoxMutable(new BlockPos(minX, minY, minZ), new BlockPos(maxX, maxY, maxZ)).spliterator(), false)
+            .map(p -> getWorld().getTileEntity(p)).filter(ILaserTarget.class::isInstance)
+            .map(t -> (TileEntity & ILaserTarget) t)
+            .filter(t -> !t.isInvalidTarget() && t.getRequiredLaserPower() > 0)
+            .map(TileEntity::getPos)
+            .forEach(targets::add);
 
         if (this.targets.isEmpty())
             return;
@@ -184,7 +183,8 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
         lasers = new Vec3d[targets.size()];
     }
 
-    protected void removeLaser() {
+    @SuppressWarnings("AssignmentToNull") // Null check is done by nonNull Predicate.
+    private void removeLaser() {
         if (this.lasers != null)
             for (int i = 0; i < this.lasers.length; i++)
                 this.lasers[i] = null;
@@ -204,7 +204,7 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
             this.pi = 0;
     }
 
-    public static final ResourceLocation[] LASER_TEXTURES = new ResourceLocation[]{
+    private static final ResourceLocation[] LASER_TEXTURES = new ResourceLocation[]{
         new ResourceLocation(QuarryPlus.modID, "textures/entities/laser_1.png"),
         new ResourceLocation(QuarryPlus.modID, "textures/entities/laser_2.png"),
         new ResourceLocation(QuarryPlus.modID, "textures/entities/laser_3.png"),
@@ -229,22 +229,22 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
     }
 
     @Override
-    public void readFromNBT(final NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        this.fortune = nbttc.getByte("fortune");
-        this.efficiency = nbttc.getByte("efficiency");
-        this.unbreaking = nbttc.getByte("unbreaking");
-        this.silktouch = nbttc.getBoolean("silktouch");
+    public void readFromNBT(final NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        this.fortune = nbt.getByte("fortune");
+        this.efficiency = nbt.getByte("efficiency");
+        this.unbreaking = nbt.getByte("unbreaking");
+        this.silktouch = nbt.getBoolean("silktouch");
         PowerManager.configureLaser(this, this.efficiency, this.unbreaking);
     }
 
     @Override
-    public NBTTagCompound writeToNBT(final NBTTagCompound nbttc) {
-        nbttc.setByte("fortune", this.fortune);
-        nbttc.setByte("efficiency", this.efficiency);
-        nbttc.setByte("unbreaking", this.unbreaking);
-        nbttc.setBoolean("silktouch", this.silktouch);
-        return super.writeToNBT(nbttc);
+    public NBTTagCompound writeToNBT(final NBTTagCompound nbt) {
+        nbt.setByte("fortune", this.fortune);
+        nbt.setByte("efficiency", this.efficiency);
+        nbt.setByte("unbreaking", this.unbreaking);
+        nbt.setBoolean("silktouch", this.silktouch);
+        return super.writeToNBT(nbt);
     }
 
     @Override
@@ -259,6 +259,7 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
     }
 
     @Override
+    @SuppressWarnings("Duplicates")
     public Map<Integer, Integer> getEnchantments() {
         final Map<Integer, Integer> ret = new HashMap<>();
         if (this.efficiency > 0)
@@ -273,7 +274,8 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
     }
 
     @Override
-    public void setEnchantent(final short id, final short val) {
+    @SuppressWarnings("Duplicates")
+    public void setEnchantment(final short id, final short val) {
         if (id == EfficiencyID)
             this.efficiency = (byte) val;
         else if (id == FortuneID)
@@ -285,12 +287,12 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
     }
 
     @Override
-    public void G_reinit() {
+    public void G_ReInit() {
         PowerManager.configureLaser(this, this.efficiency, this.unbreaking);
     }
 
     @Override
-    public List<ITextComponent> getDebugmessages() {
+    public List<ITextComponent> getDebugMessages() {
         List<ITextComponent> list = new ArrayList<>();
         list.add(toComponentString.apply("Targets"));
         targets.stream()
@@ -325,7 +327,7 @@ public class TileLaser extends APowerTile implements IEnchantableTile, IDebugSen
         double maxX = getPos().getX() + 1;
         double maxY = getPos().getY() + 1;
         double maxZ = getPos().getZ() + 1;
-        /*if (this.lasers != null) //neccesary?
+        /*if (this.lasers != null) //necessary?
             for (final Vec3d p : this.lasers) {
                 if (p == null)
                     continue;

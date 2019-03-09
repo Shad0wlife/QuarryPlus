@@ -21,17 +21,20 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
 import cofh.api.tileentity.IInventoryConnection;
-import com.yogpc.qp.BlockData;
+import com.yogpc.qp.Config;
 import com.yogpc.qp.PowerManager;
 import com.yogpc.qp.QuarryPlus;
-import com.yogpc.qp.ReflectionHelper;
 import com.yogpc.qp.compat.InvUtils;
-import com.yogpc.qp.compat.NBTBuilder;
 import com.yogpc.qp.gui.TranslationKeys;
+import com.yogpc.qp.utils.BlockData;
+import com.yogpc.qp.utils.NBTBuilder;
+import com.yogpc.qp.utils.NoDuplicateList;
+import com.yogpc.qp.utils.ReflectionHelper;
 import com.yogpc.qp.version.VersionUtil;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -66,14 +69,18 @@ import net.minecraftforge.event.ForgeEventFactory;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
-import net.minecraftforge.items.wrapper.InvWrapper;
+
+import static com.yogpc.qp.tile.IAttachment.Attachments.ALL;
+import static com.yogpc.qp.tile.IAttachment.Attachments.EXP_PUMP;
+import static com.yogpc.qp.tile.IAttachment.Attachments.FLUID_PUMP;
+import static jp.t2v.lab.syntax.MapStreamSyntax.always_true;
+import static jp.t2v.lab.syntax.MapStreamSyntax.not;
 
 @net.minecraftforge.fml.common.Optional.Interface(iface = "cofh.api.tileentity.IInventoryConnection", modid = QuarryPlus.Optionals.COFH_modID)
-public abstract class TileBasic extends APowerTile implements IEnchantableTile, HasInv, IInventoryConnection {
-    @Nullable
-    protected EnumFacing pump = null;
-    @Nullable
-    protected EnumFacing exppump = null;
+public abstract class TileBasic extends APowerTile implements IEnchantableTile, HasInv, IInventoryConnection, IAttachable {
+
+    private static final Set<IAttachment.Attachments<?>> VALID_ATTACHMENTS = ALL;
+    protected final Map<IAttachment.Attachments<?>, EnumFacing> facingMap = new HashMap<>();
 
     public final NoDuplicateList<BlockData> fortuneList = NoDuplicateList.create(ArrayList::new);
     public final NoDuplicateList<BlockData> silktouchList = NoDuplicateList.create(ArrayList::new);
@@ -85,18 +92,23 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
     protected byte efficiency;
 
     protected final LinkedList<ItemStack> cacheItems = new LinkedList<>();
-    protected final IItemHandler handler = new InvWrapper(this) {
-        @Nonnull
-        @Override
-        public ItemStack insertItem(int slot, @Nonnull ItemStack stack, boolean simulate) {
-            return stack;
-        }
-    };
+    protected final IItemHandler handler = createHandler();
 
     protected Map<Integer, Integer> ench = new HashMap<>();
 
+    /**
+     * Where quarry stops its work. Dig blocks at this value.
+     */
+    public int yLevel = 1;
+
+    /**
+     * Reconfigure energy capacity and amount to receive.
+     */
     public abstract void G_renew_powerConfigure();
 
+    /**
+     * Called when the work was finished and this block was removed or unloaded.
+     */
     protected abstract void G_destroy();
 
     @Override
@@ -105,6 +117,9 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
         super.onChunkUnload();
     }
 
+    /**
+     * Insert as much items as possible to near inventory .
+     */
     protected void S_pollItems() {
         ItemStack is;
         while (null != (is = this.cacheItems.poll())) {
@@ -142,8 +157,14 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
         return targetState;
     }
 
-    protected boolean S_breakBlock(final int x, final int y, final int z) {
-        final List<ItemStack> dropped = new LinkedList<>();
+    /**
+     * Dig block and collect its drops.
+     *
+     * @param replace to which the block will be replaced.
+     * @return true if you should get next target, false if you should try to break again.
+     */
+    protected boolean S_breakBlock(final int x, final int y, final int z, IBlockState replace) {
+        final List<ItemStack> dropped = new ArrayList<>(2);
         Chunk loadedChunk = getWorld().getChunkProvider().getLoadedChunk(x >> 4, z >> 4);
         final IBlockState blockState;
         BlockPos pos = new BlockPos(x, y, z);
@@ -154,10 +175,10 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
         }
         if (blockState.getBlock().isAir(blockState, getWorld(), pos))
             return true;
-        if (pump != null && TilePump.isLiquid(blockState)) {
-            final TileEntity te = getWorld().getTileEntity(getPos().offset(pump));
+        if (facingMap.containsKey(FLUID_PUMP) && TilePump.isLiquid(blockState)) {
+            final TileEntity te = getWorld().getTileEntity(getPos().offset(facingMap.get(FLUID_PUMP)));
             if (!(te instanceof TilePump)) {
-                this.pump = null;
+                facingMap.remove(FLUID_PUMP);
                 G_renew_powerConfigure();
                 return true;
             }
@@ -172,46 +193,50 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
             }
         }
         BI bi = S_addDroppedItems(dropped, blockState, pos);
-        if (!PowerManager.useEnergyBreak(this, blockState.getBlockHardness(getWorld(), pos), bi.b, this.unbreaking))
+        if (!PowerManager.useEnergyBreak(this, blockState.getBlockHardness(getWorld(), pos), bi.b, this.unbreaking, bi.b1))
             return false;
-        if (exppump != null) {
-            TileEntity entity = world.getTileEntity(getPos().offset(exppump));
-            if (entity instanceof TileExpPump) {
-                TileExpPump t = (TileExpPump) entity;
+        Optional.ofNullable(facingMap.get(EXP_PUMP)).map(getPos()::offset)
+            .map(getWorld()::getTileEntity)
+            .flatMap(EXP_PUMP)
+            .ifPresent(t -> {
                 double expEnergy = t.getEnergyUse(bi.i);
                 if (useEnergy(expEnergy, expEnergy, false, EnergyUsage.PUMP_EXP) == expEnergy) {
                     useEnergy(expEnergy, expEnergy, true, EnergyUsage.PUMP_EXP);
                     t.addXp(bi.i);
                 }
-            }
-        }
+            });
         this.cacheItems.addAll(dropped);
-        this.getWorld().destroyBlock(pos, false);
+        // Replace block
+        getWorld().playEvent(2001, pos, Block.getStateId(blockState));
+        getWorld().setBlockState(pos, replace, 3);
         return true;
     }
 
-    boolean S_connectPump(final EnumFacing facing) {
-        if (pump != null) {
-            final TileEntity te = this.getWorld().getTileEntity(getPos().offset(pump));
-            if (te instanceof TilePump && this.pump != facing)
-                return false;
-        }
-        this.pump = facing;
-        G_renew_powerConfigure();
-        return true;
-    }
-
-    boolean S_connectExppump(EnumFacing facing) {
-        if (exppump != null) {
-            // Exp Pump has been connected.
-            TileEntity entity = getWorld().getTileEntity(getPos().offset(exppump));
-            if (entity instanceof TileExpPump && exppump != facing) {
+    @Override
+    public boolean connectAttachment(final EnumFacing facing, IAttachment.Attachments<? extends APacketTile> attachments) {
+        if (facingMap.containsKey(attachments)) {
+            TileEntity entity = getWorld().getTileEntity(getPos().offset(facingMap.get(attachments)));
+            if (attachments.test(entity) && facingMap.get(attachments) != facing) {
                 return false;
             }
         }
-        exppump = facing;
+        facingMap.put(attachments, facing);
         G_renew_powerConfigure();
         return true;
+    }
+
+    @Override
+    public boolean isValidAttachment(IAttachment.Attachments<? extends APacketTile> attachments) {
+        return VALID_ATTACHMENTS.contains(attachments);
+    }
+
+    public void setYLevel(int yLevel) {
+        this.yLevel = yLevel;
+        if (yLevel <= 0) {
+            if (Config.content().debug()) {
+                QuarryPlus.LOGGER.warn("Quarry yLevel is set to " + yLevel + ".");
+            }
+        }
     }
 
     private BI S_addDroppedItems(final Collection<ItemStack> collection, final IBlockState state, final BlockPos pos) {
@@ -246,7 +271,7 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
                 collection.addAll(list);
                 i = fortuneLevel;
             }
-            if (exppump != null) {
+            if (facingMap.containsKey(EXP_PUMP)) {
                 xp += event.getExpToDrop();
                 if (InvUtils.hasSmelting(fakePlayer.getHeldItemMainhand())) {
                     xp += getSmeltingXp(collection, rawItems);
@@ -256,9 +281,12 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
             i = -2;
         }
         fakePlayer.setHeldItem(EnumHand.MAIN_HAND, VersionUtil.empty());
-        return new BI(i, xp);
+        return new BI(i, xp, facingMap.containsKey(IAttachment.Attachments.REPLACER));
     }
 
+    /**
+     * Helper method for Thaumcraft.
+     */
     @SuppressWarnings({"ConstantConditions", "deprecation"})
     public static void getDrops(World world, BlockPos pos, IBlockState state, Block block, int fortuneLevel, NonNullList<ItemStack> list) {
         if (QuarryPlus.Optionals.Thaumcraft_modID.equals(block.getRegistryName().getResourceDomain())) {
@@ -270,11 +298,11 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
 
     /**
      * @param stacks read only
-     * @param raws   read only
+     * @param raw    read only
      * @return The amount of xp by smelting items.
      */
-    public static int getSmeltingXp(Collection<ItemStack> stacks, Collection<ItemStack> raws) {
-        return stacks.stream().filter(s -> !raws.contains(s)).mapToInt(stack ->
+    public static int getSmeltingXp(Collection<ItemStack> stacks, Collection<ItemStack> raw) {
+        return stacks.stream().filter(not(raw::contains)).mapToInt(stack ->
             floorFloat(FurnaceRecipes.instance().getSmeltingExperience(stack) * VersionUtil.getCount(stack))).sum();
     }
 
@@ -287,52 +315,55 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
         new String[]{"func_180643_i", "getSilkTouchDrop"}, new Class<?>[]{IBlockState.class});
 
     @Override
-    public void readFromNBT(final NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        this.silktouch = nbttc.getBoolean("silktouch");
-        this.fortune = nbttc.getByte("fortune");
-        this.efficiency = nbttc.getByte("efficiency");
-        this.unbreaking = nbttc.getByte("unbreaking");
-        this.fortuneInclude = nbttc.getBoolean("fortuneInclude");
-        this.silktouchInclude = nbttc.getBoolean("silktouchInclude");
-        readLongCollection(nbttc.getTagList("fortuneList", 10), this.fortuneList);
-        readLongCollection(nbttc.getTagList("silktouchList", 10), this.silktouchList);
-        ench = NBTBuilder.fromList(nbttc.getTagList("enchList", Constants.NBT.TAG_COMPOUND), n -> n.getInteger("id"), n -> n.getInteger("value"),
-            s -> Enchantment.getEnchantmentByID(s) != null, s -> true);
+    public void readFromNBT(final NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        this.silktouch = nbt.getBoolean("silktouch");
+        this.fortune = nbt.getByte("fortune");
+        this.efficiency = nbt.getByte("efficiency");
+        this.unbreaking = nbt.getByte("unbreaking");
+        this.fortuneInclude = nbt.getBoolean("fortuneInclude");
+        this.silktouchInclude = nbt.getBoolean("silktouchInclude");
+        this.yLevel = Math.max(nbt.getInteger("yLevel"), 1);
+        readLongCollection(nbt.getTagList("fortuneList", 10), this.fortuneList);
+        readLongCollection(nbt.getTagList("silktouchList", 10), this.silktouchList);
+        ench = NBTBuilder.fromList(nbt.getTagList("enchList", Constants.NBT.TAG_COMPOUND), n -> n.getInteger("id"), n -> n.getInteger("value"),
+            s -> Enchantment.getEnchantmentByID(s) != null, always_true());
     }
 
-    private static void readLongCollection(final NBTTagList nbttl, final Collection<BlockData> target) {
+    private static void readLongCollection(final NBTTagList list, final Collection<BlockData> target) {
         target.clear();
-        for (int i = 0; i < nbttl.tagCount(); i++) {
-            final NBTTagCompound c = nbttl.getCompoundTagAt(i);
+        for (int i = 0; i < list.tagCount(); i++) {
+            final NBTTagCompound c = list.getCompoundTagAt(i);
             target.add(new BlockData(c.getString(BlockData.Name_NBT()), c.getInteger(BlockData.Meta_NBT())));
         }
     }
 
     @Override
-    public NBTTagCompound writeToNBT(final NBTTagCompound nbttc) {
-        nbttc.setBoolean("silktouch", this.silktouch);
-        nbttc.setByte("fortune", this.fortune);
-        nbttc.setByte("efficiency", this.efficiency);
-        nbttc.setByte("unbreaking", this.unbreaking);
-        nbttc.setBoolean("fortuneInclude", this.fortuneInclude);
-        nbttc.setBoolean("silktouchInclude", this.silktouchInclude);
-        nbttc.setTag("fortuneList", writeLongCollection(this.fortuneList));
-        nbttc.setTag("silktouchList", writeLongCollection(this.silktouchList));
+    public NBTTagCompound writeToNBT(final NBTTagCompound nbt) {
+        nbt.setBoolean("silktouch", this.silktouch);
+        nbt.setByte("fortune", this.fortune);
+        nbt.setByte("efficiency", this.efficiency);
+        nbt.setByte("unbreaking", this.unbreaking);
+        nbt.setBoolean("fortuneInclude", this.fortuneInclude);
+        nbt.setBoolean("silktouchInclude", this.silktouchInclude);
+        nbt.setTag("fortuneList", writeLongCollection(this.fortuneList));
+        nbt.setTag("silktouchList", writeLongCollection(this.silktouchList));
+        nbt.setInteger("yLevel", this.yLevel);
         Function<Integer, Short> function = Integer::shortValue;
-        nbttc.setTag("enchList", NBTBuilder.fromMap(ench, "id", "value", function.andThen(NBTTagShort::new), function.andThen(NBTTagShort::new)));
-        return super.writeToNBT(nbttc);
+        nbt.setTag("enchList", NBTBuilder.fromMap(ench, "id", "value", function.andThen(NBTTagShort::new), function.andThen(NBTTagShort::new)));
+        return super.writeToNBT(nbt);
     }
 
     private static NBTTagList writeLongCollection(final Collection<BlockData> target) {
-        final NBTTagList nbttl = new NBTTagList();
+        final NBTTagList list = new NBTTagList();
         for (final BlockData l : target) {
-            nbttl.appendTag(l.writeToNBT(new NBTTagCompound()).getCompoundTag(BlockData.BlockData_NBT()));
+            list.appendTag(l.toNBT().getCompoundTag(BlockData.BlockData_NBT()));
         }
-        return nbttl;
+        return list;
     }
 
     @Override
+    @SuppressWarnings("Duplicates")
     public Map<Integer, Integer> getEnchantments() {
         final Map<Integer, Integer> ret = new HashMap<>(ench);
         if (this.efficiency > 0)
@@ -347,7 +378,8 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
     }
 
     @Override
-    public void setEnchantent(final short id, final short val) {
+    @SuppressWarnings("Duplicates")
+    public void setEnchantment(final short id, final short val) {
         if (id == EfficiencyID)
             this.efficiency = (byte) val;
         else if (id == FortuneID)
@@ -380,9 +412,7 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
             return com.yogpc.qp.version.VersionUtil.empty();
         final ItemStack from = this.cacheItems.get(index);
         final ItemStack res = new ItemStack(from.getItem(), Math.min(count, VersionUtil.getCount(from)), from.getItemDamage());
-        if (from.hasTagCompound())
-            //noinspection ConstantConditions
-            res.setTagCompound(from.getTagCompound().copy());
+        Optional.ofNullable(from.getTagCompound()).map(NBTTagCompound::copy).ifPresent(res::setTagCompound);
         VersionUtil.shrink(from, VersionUtil.getCount(res));
         if (VersionUtil.isEmpty(from))
             this.cacheItems.remove(index);
@@ -446,10 +476,12 @@ public abstract class TileBasic extends APowerTile implements IEnchantableTile, 
     private static class BI {
         final byte b;
         final int i;
+        final boolean b1;
 
-        private BI(byte b, int i) {
+        private BI(byte b, int i, boolean b1) {
             this.b = b;
             this.i = i;
+            this.b1 = b1;
         }
     }
 }

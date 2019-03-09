@@ -35,7 +35,6 @@ import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.energy.CapabilityEnergy;
 import net.minecraftforge.energy.IEnergyStorage;
 import net.minecraftforge.fml.common.Loader;
-import net.minecraftforge.fml.common.ModAPIManager;
 import net.minecraftforge.fml.common.Optional;
 
 @Optional.InterfaceList(value = {
@@ -55,11 +54,13 @@ public abstract class APowerTile extends APacketTile implements ITickable, IEner
     protected boolean outputEnergyInfo = true;
 
     public APowerTile() {
-        bcLoaded = ModAPIManager.INSTANCE.hasAPI(QuarryPlus.Optionals.BuildCraft_core);
+        bcLoaded = Loader.isModLoaded(QuarryPlus.Optionals.Buildcraft_modID);
         ic2Loaded = Loader.isModLoaded(QuarryPlus.Optionals.IC2_modID);
         if (bcLoaded) {
-            helper = MjReciever.mjCapabilityHelper(this);
+            helper = MjReceiver.mjCapabilityHelper(this);
         }
+        startListener.add(debug::start);
+        finishListener.add(debug::finish);
     }
 
     @Override
@@ -121,41 +122,33 @@ public abstract class APowerTile extends APacketTile implements ITickable, IEner
         this.outputEnergyInfo = !this.outputEnergyInfo;
     }
 
-    protected final void startWork() {
-        debug.start();
-    }
-
-    protected final void finishWork() {
-        debug.finish();
-    }
-
     protected abstract boolean isWorking();
 
     @Optional.Method(modid = QuarryPlus.Optionals.IC2_modID)
-    public final void ic2load() {
+    private void ic2load() {
         MinecraftForge.EVENT_BUS.post(new EnergyTileLoadEvent(this));
     }
 
     @Optional.Method(modid = QuarryPlus.Optionals.IC2_modID)
-    public final void ic2unload() {
+    private void ic2unload() {
         MinecraftForge.EVENT_BUS.post(new EnergyTileUnloadEvent(this));
     }
 
     @Override
-    public void readFromNBT(final NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        setStoredEnergy(nbttc.getDouble("storedEnergy"));
-        configure(nbttc.getDouble("MAX_receive"), nbttc.getDouble("MAX_stored"));
-        outputEnergyInfo = !nbttc.hasKey("outputEnergyInfo") || nbttc.getBoolean("outputEnergyInfo");
+    public void readFromNBT(final NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        setStoredEnergy(nbt.getDouble("storedEnergy"));
+        configure(nbt.getDouble("MAX_receive"), nbt.getDouble("MAX_stored"));
+        outputEnergyInfo = !nbt.hasKey("outputEnergyInfo") || nbt.getBoolean("outputEnergyInfo");
     }
 
     @Override
-    public NBTTagCompound writeToNBT(final NBTTagCompound nbttc) {
-        nbttc.setDouble("storedEnergy", this.all);
-        nbttc.setDouble("MAX_stored", this.max);
-        nbttc.setDouble("MAX_receive", this.maxGot);
-        nbttc.setBoolean("outputEnergyInfo", outputEnergyInfo);
-        return super.writeToNBT(nbttc);
+    public NBTTagCompound writeToNBT(final NBTTagCompound nbt) {
+        nbt.setDouble("storedEnergy", this.all);
+        nbt.setDouble("MAX_stored", this.max);
+        nbt.setDouble("MAX_receive", this.maxGot);
+        nbt.setBoolean("outputEnergyInfo", outputEnergyInfo);
+        return super.writeToNBT(nbt);
     }
 
     /**
@@ -208,15 +201,15 @@ public abstract class APowerTile extends APacketTile implements ITickable, IEner
         return this.max;
     }
 
-    public final void configure(final double maxRecieve, final double maxstored) {
-        this.maxGot = maxRecieve;
-        this.max = maxstored;
+    public final void configure(final double maxReceive, final double maxStored) {
+        this.maxGot = maxReceive;
+        this.max = maxStored;
         if (Config.content().noEnergy()) {
-            this.all = maxstored;
+            this.all = maxStored;
         }
     }
 
-    //ic2 energy api implecation
+    //ic2 energy api implication
 
     /**
      * Energy unit is EU
@@ -248,7 +241,7 @@ public abstract class APowerTile extends APacketTile implements ITickable, IEner
         return 4;
     }
 
-    //cofh(RF) energy api implecation
+    //cofh(RF) energy api implication
 
     /**
      * Energy Unit is RF.
@@ -277,7 +270,7 @@ public abstract class APowerTile extends APacketTile implements ITickable, IEner
         return canReceive();
     }
 
-    //Forge energy api implecation
+    //Forge energy api implication
 
     /**
      * Energy unit is RF.
@@ -327,8 +320,8 @@ public abstract class APowerTile extends APacketTile implements ITickable, IEner
     @Override
     public void getDebugInfo(List<String> left, List<String> right, EnumFacing side) {
         left.add(getClass().getName());
-        left.add(ItemQuarryDebug.tileposToString(this).getText());
-        left.add(ItemQuarryDebug.energyToString(this).getText());
+        left.add(ItemQuarryDebug.tilePosToString(this).getUnformattedComponentText());
+        left.add(ItemQuarryDebug.energyToString(this).getUnformattedComponentText());
         if (isDebugSender) {
             IDebugSender sender = (IDebugSender) this;
             sender.getMessage().stream().map(ITextComponent::getUnformattedComponentText).forEach(left::add);

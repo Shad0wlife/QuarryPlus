@@ -21,6 +21,7 @@ import com.yogpc.qp.Config;
 import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.compat.InvUtils;
 import com.yogpc.qp.gui.TranslationKeys;
+import com.yogpc.qp.utils.IngredientWithCount;
 import com.yogpc.qp.version.VersionUtil;
 import javax.annotation.Nullable;
 import net.minecraft.entity.player.EntityPlayer;
@@ -48,7 +49,7 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
     public List<WorkbenchRecipes> recipesList = Collections.emptyList();
     private WorkbenchRecipes currentRecipe = WorkbenchRecipes.dummyRecipe();
     private ItemHandler itemHandler = new ItemHandler();
-    public boolean workcontinue;
+    public boolean workContinue;
 
     @Override
     public void update() {
@@ -57,20 +58,25 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
             if (isWorking()) {
                 if (currentRecipe.energy() <= getStoredEnergy() || Config.content().noEnergy()) {
                     useEnergy(currentRecipe.energy(), currentRecipe.energy(), true, EnergyUsage.WORKBENCH);
-                    ItemStack stack = currentRecipe.output().toStack(1);
+                    ItemStack stack = currentRecipe.getOutput();
                     ItemStack inserted = InvUtils.injectToNearTile(getWorld(), getPos(), stack);
                     if (VersionUtil.nonEmpty(inserted)) {
                         InventoryHelper.spawnItemStack(getWorld(), getPos().getX(), getPos().getY(), getPos().getZ(), stack);
                     }
-                    currentRecipe.inputsJ().forEach(v1 ->
-                        inventory.stream().filter(v1::isItemEqual).findFirst().ifPresent(stack1 -> VersionUtil.shrink(stack1, VersionUtil.getCount(v1)))
-                    );
+                    currentRecipe.inputsJ().forEach(inputList -> {
+                        for (IngredientWithCount i : inputList) {
+                            if (inventory.stream().anyMatch(i::shrink)) break;
+                        }
+                    });
+//                    currentRecipe.inputsJ().forEach(v1 ->
+//                        inventory.stream().filter(v1::isItemEqual).findFirst().ifPresent(stack1 -> VersionUtil.shrink(stack1, VersionUtil.getCount(v1)))
+//                    );
                     for (int i = 0; i < inventory.size(); i++) {
                         if (VersionUtil.isEmpty(inventory.get(i)))
                             inventory.set(i, VersionUtil.empty());
                     }
                     markDirty();
-                    setCurrentRecipeIndex(workcontinue ? getRecipeIndex() : -1);
+                    setCurrentRecipeIndex(workContinue ? getRecipeIndex() : -1);
                 }
             }
         }
@@ -82,9 +88,9 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
     }
 
     @Override
-    public void readFromNBT(NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        NBTTagList list = nbttc.getTagList("Items", Constants.NBT.TAG_COMPOUND);
+    public void readFromNBT(NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        NBTTagList list = nbt.getTagList("Items", Constants.NBT.TAG_COMPOUND);
         VersionUtil.nbtListStream(list).forEach(nbtTagCompound -> {
             int j = nbtTagCompound.getByte("Slot") & 255;
             ItemStack stack = VersionUtil.fromNBTTag(nbtTagCompound);
@@ -94,7 +100,7 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
     }
 
     @Override
-    public NBTTagCompound writeToNBT(NBTTagCompound nbttc) {
+    public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
         NBTTagList list = new NBTTagList();
         for (int i = 0; i < inventory.size(); i++) {
             ItemStack stack = inventory.get(i);
@@ -105,8 +111,8 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
             nbttagcompound.setInteger("Count", VersionUtil.getCount(stack));
             list.appendTag(nbttagcompound);
         }
-        nbttc.setTag("Items", list);
-        return super.writeToNBT(nbttc);
+        nbt.setTag("Items", list);
+        return super.writeToNBT(nbt);
     }
 
     @Override
@@ -121,30 +127,30 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
 
     @Override
     public ItemStack getStackInSlot(int index) {
-        if (27 <= index && index < 45) {
-            return inventory2.get(index - 27);
+        if (inventory.size() <= index && index < getSizeInventory()) {
+            return inventory2.get(index - inventory.size());
         }
         return inventory.get(index);
     }
 
     @Override
     public ItemStack decrStackSize(int index, int count) {
-        if (27 <= index && index < 45)
-            return ItemStackHelper.getAndSplit(inventory2, index - 27, count);
+        if (inventory.size() <= index && index < getSizeInventory())
+            return ItemStackHelper.getAndSplit(inventory2, index - inventory.size(), count);
         return ItemStackHelper.getAndSplit(inventory, index, count);
     }
 
     @Override
     public ItemStack removeStackFromSlot(int index) {
-        if (27 <= index && index < 45)
-            return ItemStackHelper.getAndRemove(inventory2, index - 27);
+        if (inventory.size() <= index && index < getSizeInventory())
+            return ItemStackHelper.getAndRemove(inventory2, index - inventory.size());
         return ItemStackHelper.getAndRemove(inventory, index);
     }
 
     @Override
     public void setInventorySlotContents(int index, ItemStack stack) {
-        if (27 <= index && index < 45) {
-            inventory2.set(index - 27, stack);
+        if (inventory.size() <= index && index < getSizeInventory()) {
+            inventory2.set(index - inventory.size(), stack);
         } else
             inventory.set(index, stack);
     }
@@ -165,7 +171,7 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
         recipesList = WorkbenchRecipes.getRecipe(inventory);
         inventory2.clear();
         for (int i = 0; i < recipesList.size(); i++) {
-            setInventorySlotContents(27 + i, recipesList.get(i).output().toStack(1));
+            setInventorySlotContents(inventory.size() + i, recipesList.get(i).getOutput());
         }
         if (getRecipeIndex() == -1) {
             setCurrentRecipeIndex(-1);
@@ -187,7 +193,7 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
             case 1:
                 return 0;//(int) getStoredEnergy();
             case 2:
-                return workcontinue ? 1 : 0;
+                return workContinue ? 1 : 0;
         }
         return 0;
     }
@@ -202,7 +208,7 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
 //                setStoredEnergy(value);
                 break;
             case 2:
-                workcontinue = value == 1;
+                workContinue = value == 1;
                 break;
         }
     }
@@ -218,9 +224,9 @@ public class TileWorkbench extends APowerTile implements HasInv, IDebugSender, I
     }
 
     @Override
-    public List<TextComponentString> getDebugmessages() {
+    public List<TextComponentString> getDebugMessages() {
         return Arrays.asList(new TextComponentString(currentRecipe.toString()),
-            new TextComponentString("Work mode : " + (workcontinue ? "Continue" : "Only once")));
+            new TextComponentString("Work mode : " + (workContinue ? "Continue" : "Only once")));
     }
 
     @Override

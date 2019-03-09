@@ -13,7 +13,13 @@
 
 package com.yogpc.qp.tile;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 import com.google.common.collect.ImmutableMap;
@@ -24,6 +30,7 @@ import com.yogpc.qp.PowerManager;
 import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.QuarryPlusI;
 import com.yogpc.qp.block.BlockPump;
+import com.yogpc.qp.compat.InvUtils;
 import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.packet.pump.Mappings;
@@ -73,7 +80,7 @@ import scala.Symbol;
 
 import static io.github.opencubicchunks.cubicchunks.api.util.Bits.*;
 
-public class TilePump extends APacketTile implements IEnchantableTile, ITickable, IDebugSender {
+public class TilePump extends APacketTile implements IEnchantableTile, ITickable, IDebugSender, IAttachment {
     @SuppressWarnings("NullableProblems")
     @Nullable
     public EnumFacing connectTo = null;
@@ -84,7 +91,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
     protected byte unbreaking;
     protected byte fortune;
     protected boolean silktouch;
-    private final LinkedList<FluidStack> liquids = new LinkedList<>();
+    private final List<FluidStack> liquids = new ArrayList<>();
     public final EnumMap<EnumFacing, LinkedList<String>> mapping = new EnumMap<>(EnumFacing.class);
     public final EnumMap<EnumFacing, PumpTank> tankMap = new EnumMap<>(EnumFacing.class);
 
@@ -95,11 +102,11 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
         }
     }
 
-    public TileBasic G_connected() {
+    public IAttachable G_connected() {
         if (connectTo != null) {
             final TileEntity te = getWorld().getTileEntity(getPos().offset(connectTo));
-            if (te instanceof TileBasic)
-                return (TileBasic) te;
+            if (te instanceof IAttachable)
+                return (IAttachable) te;
             else {
                 setConnectTo(null);
                 if (!getWorld().isRemote)
@@ -115,57 +122,59 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
     }
 
     @Override
-    public void readFromNBT(final NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        this.silktouch = nbttc.getBoolean("silktouch");
-        this.fortune = nbttc.getByte("fortune");
-        this.unbreaking = nbttc.getByte("unbreaking");
-        if (nbttc.hasKey("connectTo")) {
-            setConnectTo(EnumFacing.getFront(nbttc.getByte("connectTo")));
+    public void readFromNBT(final NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        this.silktouch = nbt.getBoolean("silktouch");
+        this.fortune = nbt.getByte("fortune");
+        this.unbreaking = nbt.getByte("unbreaking");
+        if (nbt.hasKey("connectTo")) {
+            setConnectTo(EnumFacing.getFront(nbt.getByte("connectTo")));
             preFacing = this.connectTo;
         }
-        if (nbttc.getTag("mapping0") instanceof NBTTagList)
+        if (nbt.getTag("mapping0") instanceof NBTTagList)
             for (int i = 0; i < this.mapping.size(); i++)
-                readStringCollection(nbttc.getTagList("mapping" + i, Constants.NBT.TAG_STRING), this.mapping.get(EnumFacing.getFront(i)));
-        this.range = nbttc.getByte("range");
-        this.quarryRange = nbttc.getBoolean("quarryRange");
+                readStringCollection(nbt.getTagList("mapping" + i, Constants.NBT.TAG_STRING), this.mapping.get(EnumFacing.getFront(i)));
+        this.range = nbt.getByte("range");
+        this.quarryRange = nbt.getBoolean("quarryRange");
+        this.autoChangedRange = nbt.getBoolean("autoChangedRange");
         if (this.silktouch) {
             this.liquids.clear();
-            final NBTTagList nbttl = nbttc.getTagList("liquids", Constants.NBT.TAG_COMPOUND);
-            for (int i = 0; i < nbttl.tagCount(); i++)
-                this.liquids.add(FluidStack.loadFluidStackFromNBT(nbttl.getCompoundTagAt(i)));
+            final NBTTagList liquids = nbt.getTagList("liquids", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < liquids.tagCount(); i++)
+                this.liquids.add(FluidStack.loadFluidStackFromNBT(liquids.getCompoundTagAt(i)));
         }
     }
 
-    private static void readStringCollection(final NBTTagList nbttl, final Collection<String> target) {
+    private static void readStringCollection(final NBTTagList list, final Collection<String> target) {
         target.clear();
-        IntStream.range(0, nbttl.tagCount()).mapToObj(nbttl::getStringTagAt).forEach(target::add);
+        IntStream.range(0, list.tagCount()).mapToObj(list::getStringTagAt).forEach(target::add);
     }
 
     @Override
-    public NBTTagCompound writeToNBT(final NBTTagCompound nbttc) {
-        nbttc.setBoolean("silktouch", this.silktouch);
-        nbttc.setByte("fortune", this.fortune);
-        nbttc.setByte("unbreaking", this.unbreaking);
+    public NBTTagCompound writeToNBT(final NBTTagCompound nbt) {
+        nbt.setBoolean("silktouch", this.silktouch);
+        nbt.setByte("fortune", this.fortune);
+        nbt.setByte("unbreaking", this.unbreaking);
         if (connectTo != null)
-            nbttc.setByte("connectTo", (byte) this.connectTo.ordinal());
+            nbt.setByte("connectTo", (byte) this.connectTo.ordinal());
         for (int i = 0; i < this.mapping.size(); i++)
-            nbttc.setTag("mapping" + i, writeStringCollection(this.mapping.get(EnumFacing.getFront(i))));
-        nbttc.setByte("range", this.range);
-        nbttc.setBoolean("quarryRange", this.quarryRange);
+            nbt.setTag("mapping" + i, writeStringCollection(this.mapping.get(EnumFacing.getFront(i))));
+        nbt.setByte("range", this.range);
+        nbt.setBoolean("quarryRange", this.quarryRange);
+        nbt.setBoolean("autoChangedRange", this.autoChangedRange);
         if (this.silktouch) {
-            final NBTTagList nbttl = new NBTTagList();
+            final NBTTagList list = new NBTTagList();
             for (final FluidStack l : this.liquids)
-                nbttl.appendTag(l.writeToNBT(new NBTTagCompound()));
-            nbttc.setTag("liquids", nbttl);
+                list.appendTag(l.writeToNBT(new NBTTagCompound()));
+            nbt.setTag("liquids", list);
         }
-        return super.writeToNBT(nbttc);
+        return super.writeToNBT(nbt);
     }
 
     private static NBTTagList writeStringCollection(final Collection<String> target) {
-        final NBTTagList nbttl = new NBTTagList();
-        target.stream().map(NBTTagString::new).forEach(nbttl::appendTag);
-        return nbttl;
+        final NBTTagList list = new NBTTagList();
+        target.stream().map(NBTTagString::new).forEach(list::appendTag);
+        return list;
     }
 
     @Override
@@ -175,10 +184,10 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
                 BlockPos offset = getPos().offset(facing);
                 IBlockState state = getWorld().getBlockState(offset);
                 if (state.getBlock().hasTileEntity(state)) {
-                    TileEntity tileEntity = getWorld().getTileEntity(offset);
-                    if (tileEntity != null && tileEntity.hasCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, facing.getOpposite())) {
-                        IFluidHandler handler = tileEntity.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, facing.getOpposite());
-                        if (handler != null) {
+                    Optional.ofNullable(getWorld().getTileEntity(offset))
+                        .filter(t -> t.hasCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, facing.getOpposite()))
+                        .map(t -> t.getCapability(CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY, facing.getOpposite()))
+                        .ifPresent(handler -> {
                             PumpTank tank = tankMap.get(facing);
                             FluidStack resource = tank.drain(Fluid.BUCKET_VOLUME, false);
                             if (resource != null) {
@@ -187,14 +196,13 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
                                     handler.fill(tank.drain(fill, true), true);
                                 }
                             }
-                        }
-                    }
+                        });
                 }
             }
             if (!initialized) {
                 if (connectTo != null) {
                     TileEntity te = getWorld().getTileEntity(getPos().offset(connectTo));
-                    if (te instanceof TileBasic && ((TileBasic) te).S_connectPump(this.connectTo.getOpposite())) {
+                    if (te instanceof IAttachable && ((IAttachable) te).connect(this.connectTo.getOpposite(), Attachments.FLUID_PUMP)) {
                         S_sendNowPacket();
                         this.initialized = true;
                     } else if (getWorld().isAirBlock(getPos().offset(connectTo))) {
@@ -208,12 +216,12 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
     }
 
     @Override
-    public void G_reinit() {
+    public void G_ReInit() {
         if (!getWorld().isRemote) {
             TileEntity te;
             for (EnumFacing facing : EnumFacing.VALUES) {
                 te = getWorld().getTileEntity(getPos().offset(facing));
-                if (te instanceof TileBasic && ((TileBasic) te).S_connectPump(facing.getOpposite())) {
+                if (te instanceof IAttachable && ((IAttachable) te).connect(facing.getOpposite(), Attachments.FLUID_PUMP)) {
                     setConnectTo(facing);
                     S_sendNowPacket();
                     return;
@@ -232,20 +240,13 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
         }
     }
 
+    @Override
     public void setConnectTo(@Nullable EnumFacing connectTo) {
         this.connectTo = connectTo;
         if (hasWorld()) {
             IBlockState state = getWorld().getBlockState(getPos());
-            if (connectTo == null && state.getValue(BlockPump.CONNECTED)) {
-                validate();
-                getWorld().setBlockState(getPos(), state.withProperty(BlockPump.CONNECTED, false));
-                validate();
-                getWorld().setTileEntity(getPos(), this);
-            } else if (connectTo != null && !state.getValue(BlockPump.CONNECTED)) {
-                validate();
-                getWorld().setBlockState(getPos(), state.withProperty(BlockPump.CONNECTED, true));
-                validate();
-                getWorld().setTileEntity(getPos(), this);
+            if (connectTo != null ^ state.getValue(BlockPump.CONNECTED)) {
+                InvUtils.setNewState(getWorld(), getPos(), this, state.withProperty(BlockPump.CONNECTED, connectTo != null));
             }
         }
     }
@@ -258,10 +259,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
         }
         if (!getWorld().isRemote) {
             IBlockState state = getWorld().getBlockState(getPos());
-            validate();
-            getWorld().setBlockState(getPos(), state.withProperty(BlockPump.ACTING, b));
-            validate();
-            getWorld().setTileEntity(getPos(), this);
+            InvUtils.setNewState(getWorld(), getPos(), this, state.withProperty(BlockPump.ACTING, b));
         }
     }
 
@@ -273,6 +271,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
 
     private byte range = 0;
     private boolean quarryRange = true;
+    private boolean autoChangedRange = false;
 
     private int  py = Integer.MIN_VALUE;
     private int cy = -1;
@@ -595,6 +594,16 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
         return targetState;
     }
 
+    private void autoChange(boolean on) {
+        if (on) {
+            this.autoChangedRange = true;
+            this.quarryRange = false;
+        } else if (this.autoChangedRange) {
+            this.autoChangedRange = false;
+            this.quarryRange = true;
+        }
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     /**
@@ -653,12 +662,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
             int drained = Math.min(fs.amount, resource.amount);
             final FluidStack ret = new FluidStack(fs, drained);
             if (doDrain) {
-                fs.amount -= ret.amount;
-                if (fs.amount <= 0) {
-                    liquids.remove(fs);
-                }
-                onContentsChanged();
-                FluidEvent.fireEvent(new FluidEvent.FluidDrainingEvent(fs.amount <= 0 ? null : fs, getWorld(), getPos(), this, drained));
+                doDrain(() -> liquids.remove(fs), fs, ret.amount);
             }
             return ret;
         }
@@ -668,8 +672,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
             final LinkedList<FluidTankProperties> ret = new LinkedList<>();
             if (mapping.get(facing).isEmpty()) {
                 if (liquids.isEmpty())
-                    for (Fluid fluid : FluidRegistry.getRegisteredFluids().values())
-                        ret.add(new FluidTankProperties(new FluidStack(fluid, 0), Integer.MAX_VALUE, false, true));
+                    return IDummyFluidHandler.emptyPropertyArray;
                 else
                     for (final FluidStack fs : liquids)
                         ret.add(new FluidTankProperties(fs, Integer.MAX_VALUE, false, true));
@@ -711,15 +714,20 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
             int drained = Math.min(maxDrain, stack.amount);
             FluidStack ret = new FluidStack(stack, drained);
             if (doDrain) {
-                stack.amount -= drained;
-                if (stack.amount <= 0) {
-                    liquids.remove(index);
-                }
-                onContentsChanged();
-                FluidEvent.fireEvent(new FluidEvent.FluidDrainingEvent(stack.amount <= 0 ? null : stack, getWorld(), getPos(), this, drained));
+                doDrain(() -> liquids.remove(index), stack, drained);
             }
             return ret;
         }
+
+        private void doDrain(Runnable remove, FluidStack stack, int drained) {
+            stack.amount -= drained;
+            if (stack.amount <= 0) {
+                remove.run();
+            }
+            onContentsChanged();
+            FluidEvent.fireEvent(new FluidEvent.FluidDrainingEvent(stack.amount <= 0 ? null : stack, getWorld(), getPos(), this, drained));
+        }
+
     }
 
     public List<ITextComponent> C_getNames() {
@@ -735,7 +743,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
     }
 
     @Override
-    public List<ITextComponent> getDebugmessages() {
+    public List<ITextComponent> getDebugMessages() {
         ArrayList<ITextComponent> list = new ArrayList<>();
         list.add(toComponentString.apply("Connection : " + this.connectTo));
         for (EnumFacing facing : EnumFacing.VALUES) {
@@ -759,6 +767,7 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
         return TranslationKeys.pump;
     }
 
+    @SuppressWarnings("Duplicates")
     @Override
     public ImmutableMap<Integer, Integer> getEnchantments() {
         ImmutableMap.Builder<Integer, Integer> builder = ImmutableMap.builder();
@@ -772,7 +781,8 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
     }
 
     @Override
-    public void setEnchantent(final short id, final short val) {
+    @SuppressWarnings("Duplicates")
+    public void setEnchantment(final short id, final short val) {
         if (id == FortuneID)
             this.fortune = (byte) val;
         else if (id == UnbreakingID)

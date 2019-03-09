@@ -13,6 +13,7 @@
 
 package com.yogpc.qp;
 
+import java.io.File;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.IntFunction;
@@ -34,13 +35,13 @@ import com.yogpc.qp.tile.TilePlacer;
 import com.yogpc.qp.tile.TilePump;
 import com.yogpc.qp.tile.TileQuarry;
 import com.yogpc.qp.tile.TileRefinery;
+import com.yogpc.qp.tile.TileReplacer;
 import com.yogpc.qp.tile.TileSolidQuarry;
 import com.yogpc.qp.tile.TileWorkbench;
 import com.yogpc.qp.tile.WorkbenchRecipes;
 import com.yogpc.qp.version.VersionDiff;
 import com.yogpc.qp.version.VersionUtil;
 import net.minecraft.block.Block;
-import net.minecraft.client.renderer.block.model.ModelResourceLocation;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.launchwrapper.Launch;
@@ -109,7 +110,7 @@ public class QuarryPlus {
         INSTANCE = new QuarryPlus();
         VersionDiff diff;
         try {
-            diff = (VersionDiff) Class.forName("com.yogpc.qp.version.Diff" + String.valueOf(ForgeVersion.getMajorVersion() - 2)).newInstance();
+            diff = (VersionDiff) Class.forName("com.yogpc.qp.version.Diff" + (ForgeVersion.getMajorVersion() - 2)).newInstance();
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("VersionDiff doesn't exist!", e);
         }
@@ -126,12 +127,13 @@ public class QuarryPlus {
 
     @Mod.EventHandler
     public void preInit(final FMLPreInitializationEvent event) {
-        Config.setConfigFile(event.getSuggestedConfigurationFile());
+        Config.setConfigFile(event.getSuggestedConfigurationFile(), new File(event.getModConfigurationDirectory(), modID + "/" + modID + ".cfg"));
         ForgeChunkManager.setForcedChunkLoadingCallback(QuarryPlus.instance(), ChunkLoadingHandler.instance());
         MinecraftForge.EVENT_BUS.register(QuarryPlus.instance());
         if (!Config.content().disableDungeonLoot())
             MinecraftForge.EVENT_BUS.register(Loot.instance());
         proxy.registerTextures();
+        MinecraftForge.EVENT_BUS.register(proxy);
         NetworkRegistry.INSTANCE.registerGuiHandler(INSTANCE, GuiHandler.instance());
         inDev = ((Boolean) Launch.blackboard.getOrDefault("fml.deobfuscatedEnvironment", Boolean.FALSE));
     }
@@ -140,6 +142,10 @@ public class QuarryPlus {
     public void init(final FMLInitializationEvent event) {
         PacketHandler.init();
         WorkbenchRecipes.registerRecipes();
+        Config.content().outputRecipeJson();
+        Config.recipeSync();
+        // TODO change to net.minecraftforge.fml.common.ModAPIManager
+        //if (inDev && Loader.isModLoaded(Optionals.Buildcraft_facades))
         if (inDev && ModAPIManager.INSTANCE.hasAPI(Optionals.Buildcraft_facades))
             BuildcraftHelper.disableFacade();
     }
@@ -162,7 +168,9 @@ public class QuarryPlus {
             blockRefinery(),
             blockBookMover(),
             blockExpPump(),
-            blockSolidQuarry()
+            blockSolidQuarry(),
+            dummyBlock(),
+            blockReplacer()
         );
 
         GameRegistry.registerTileEntity(TileWorkbench.class, new ResourceLocation(modID, QuarryPlus.Names.workbench));
@@ -177,6 +185,7 @@ public class QuarryPlus {
         GameRegistry.registerTileEntity(TileBookMover.class, new ResourceLocation(modID, QuarryPlus.Names.moverfrombook));
         GameRegistry.registerTileEntity(TileExpPump.class, new ResourceLocation(modID, QuarryPlus.Names.exppump));
         GameRegistry.registerTileEntity(TileSolidQuarry.class, new ResourceLocation(modID, QuarryPlus.Names.solidquarry));
+        GameRegistry.registerTileEntity(TileReplacer.class, new ResourceLocation(modID, QuarryPlus.Names.replacer));
     }
 
     @SubscribeEvent
@@ -198,8 +207,10 @@ public class QuarryPlus {
             blockBookMover().itemBlock(),
             blockExpPump().itemBlock(),
             blockSolidQuarry().itemBlock(),
+            dummyBlock().itemBlock(),
+            blockReplacer().itemBlock(),
             itemTool(),
-            magicmirror(),
+            magicMirror(),
             debugItem()
         );
     }
@@ -207,7 +218,6 @@ public class QuarryPlus {
     @SubscribeEvent
     @SideOnly(Side.CLIENT)
     public void registerModels(ModelRegistryEvent event) {
-        final String variantIn = "inventory";
         ModelLoader.setCustomModelResourceLocation(blockQuarry().itemBlock(), 0, proxy.fromEntry(blockQuarry()));
         ModelLoader.setCustomModelResourceLocation(blockFrame().itemBlock, 0, proxy.fromEntry(blockFrame()));
         ModelLoader.setCustomModelResourceLocation(blockFrame().itemBlock, 1, proxy.fromEntry(blockFrame()));
@@ -225,12 +235,15 @@ public class QuarryPlus {
         ModelLoader.setCustomModelResourceLocation(blockBookMover().itemBlock(), 0, proxy.fromEntry(blockBookMover()));
         ModelLoader.setCustomModelResourceLocation(blockExpPump().itemBlock(), 0, proxy.fromEntry(blockExpPump()));
         ModelLoader.setCustomModelResourceLocation(blockSolidQuarry().itemBlock(), 0, proxy.fromEntry(blockSolidQuarry()));
-        ModelLoader.setCustomModelResourceLocation(itemTool(), 0, new ModelResourceLocation(prefix + ItemTool.statuschecker(), variantIn));
-        ModelLoader.setCustomModelResourceLocation(itemTool(), 1, new ModelResourceLocation(prefix + ItemTool.listeditor(), variantIn));
-        ModelLoader.setCustomModelResourceLocation(itemTool(), 2, new ModelResourceLocation(prefix + ItemTool.liquidselector(), variantIn));
-        ModelLoader.setCustomModelResourceLocation(magicmirror(), 0, proxy.fromEntry(magicmirror()));
-        ModelLoader.setCustomModelResourceLocation(magicmirror(), 1, proxy.fromEntry(magicmirror()));
-        ModelLoader.setCustomModelResourceLocation(magicmirror(), 2, proxy.fromEntry(magicmirror()));
+        ModelLoader.setCustomModelResourceLocation(dummyBlock().itemBlock(), 0, proxy.fromEntry(dummyBlock()));
+        ModelLoader.setCustomModelResourceLocation(blockReplacer().itemBlock(), 0, proxy.fromEntry(blockReplacer()));
+        ModelLoader.setCustomModelResourceLocation(itemTool(), ItemTool.meta_StatusChecker(), ModelLoader.getInventoryVariant(prefix + ItemTool.statuschecker()));
+        ModelLoader.setCustomModelResourceLocation(itemTool(), ItemTool.meta_ListEditor(), ModelLoader.getInventoryVariant(prefix + ItemTool.listeditor()));
+        ModelLoader.setCustomModelResourceLocation(itemTool(), ItemTool.meta_LiquidSelector(), ModelLoader.getInventoryVariant(prefix + ItemTool.liquidselector()));
+        ModelLoader.setCustomModelResourceLocation(itemTool(), ItemTool.meta_YSetter(), ModelLoader.getInventoryVariant(prefix + ItemTool.ySetter()));
+        ModelLoader.setCustomModelResourceLocation(magicMirror(), 0, proxy.fromEntry(magicMirror()));
+        ModelLoader.setCustomModelResourceLocation(magicMirror(), 1, proxy.fromEntry(magicMirror()));
+        ModelLoader.setCustomModelResourceLocation(magicMirror(), 2, proxy.fromEntry(magicMirror()));
         ModelLoader.setCustomModelResourceLocation(debugItem(), 0, proxy.fromEntry(debugItem()));
     }
 
@@ -249,7 +262,7 @@ public class QuarryPlus {
 
     /**
      * Message key must be either {@code IMC_RemoveRecipe} or {@code IMC_AddRecipe}.
-     * Message value must be NBTTag.
+     * Message value must be NBTTag. The NBTTag must have recipe id ({@link ResourceLocation}).
      *
      * @param event event
      */
@@ -265,32 +278,34 @@ public class QuarryPlus {
                     ItemHandlerHelper.copyStackWithSize(stack, VersionUtil.getCount(stack) * integer);
 
                 NBTTagList list = nbtValue.getTagList(Optionals.IMC_Add, Constants.NBT.TAG_COMPOUND);
+                ResourceLocation location = new ResourceLocation(nbtValue.getString("id"));
                 ItemDamage result = ItemDamage.apply(toStack.apply(list.getCompoundTagAt(0)));
                 List<IntFunction<ItemStack>> functionList = VersionUtil.nbtListStream(list).skip(1).map(toStack.andThen(toFunc)).collect(Collectors.toList());
-                WorkbenchRecipes.addListRecipe(result, nbtValue.getInteger(Optionals.IMC_Energy), functionList, true, WorkbenchRecipes.UnitRF());
+                WorkbenchRecipes.addListRecipe(location, result, nbtValue.getInteger(Optionals.IMC_Energy), functionList, true, WorkbenchRecipes.UnitRF());
             }
         });
     }
 
     @Mod.EventHandler
     public void onFingerprintViolation(FMLFingerprintViolationEvent event) {
-        try {
-            Class.forName("net.minecraft.item.ItemStack").getDeclaredField("EMPTY");
-        } catch (ReflectiveOperationException ignore) {
+        if (!event.isDirectory()) {
             LOGGER.warn("Invalid fingerprint detected! The file " + event.getSource().getName() +
-                " may have been tampered with. This version will NOT be supported by the author!");
+                " may have been tampered with. This version will NOT be supported by the author!" + System.lineSeparator() +
+                "Download: https://minecraft.curseforge.com/projects/additional-enchanted-miner");
         }
     }
 
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "WeakerAccess", "SpellCheckingInspection"})
     public static class Optionals {
-        public static final String BuildCraft_core = "BuildCraftAPI|core";
-        public static final String Buildcraft_facades = "BuildCraftAPI|facades";
-        public static final String Buildcraft_modID = "buildcraftcore";
-        public static final String Buildcraft_recipes = "BuildCraftAPI|recipes";
-        public static final String Buildcraft_tiles = "BuildCraftAPI|tiles";
-        public static final String Buildcraft_tools = "BuildCraftAPI|tools";
-        public static final String Buildcraft_transport = "BuildCraftAPI|transport";
+        public static final String Buildcraft_modID = "buildcraftlib";
+        public static final String BuildCraft_core = Buildcraft_modID; // buildcraftapi_core
+        public static final String Buildcraft_facades = Buildcraft_modID; // buildcraftapi_facades
+        public static final String Buildcraft_recipes = Buildcraft_modID; // buildcraftapi_recipes
+        public static final String Buildcraft_tiles = Buildcraft_modID; // buildcraftapi_tiles
+        public static final String Buildcraft_tools = Buildcraft_modID; // buildcraftapi_tools
+        public static final String Buildcraft_transport = Buildcraft_modID; // buildcraftapi_transport
+        public static final String Buildcraft_silicon_modID = "buildcraftsilicon";
+        public static final String Buildcraft_factory_modID = "buildcraftfactory";
         public static final String COFH_modID = "cofhcore";
         public static final String IC2_modID = "ic2";
         public static final String IMC_Add = "IMC_AddRecipe";
@@ -305,12 +320,14 @@ public class QuarryPlus {
         public static final String updateJson = "https://raw.githubusercontent.com/Kotori316/QuarryPlus/1.12/update.json";
     }
 
+    @SuppressWarnings("SpellCheckingInspection")
     public static class Names {
         public static final String advpump = "standalonepump";
         public static final String advquarry = "chunkdestroyer";
         public static final String breaker = "breakerplus";
         public static final String controller = "spawnercontroller";
         public static final String debug = "quarrydebug";
+        public static final String dummyblock = "dummyblock";
         public static final String exppump = "exppump";
         public static final String frame = "quarryframe";
         public static final String laser = "laserplus";
@@ -324,6 +341,7 @@ public class QuarryPlus {
         public static final String pump = "pumpplus";
         public static final String quarry = "quarryplus";
         public static final String refinery = "refineryplus";
+        public static final String replacer = "quarryreplacer";
         public static final String solidquarry = "solidquarry";
         public static final String tool = "tool";
         public static final String workbench = "workbenchplus";

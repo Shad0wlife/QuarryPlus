@@ -28,7 +28,7 @@ public class ContainerWorkbench extends Container {
     private final EntityPlayer player;
     private static final int sourceSlot = 27;
     private static final int recipeSlot = 18;
-    private static final int playerSlot = 45;
+    private static final int playerSlot = 36;
 
     public ContainerWorkbench(final EntityPlayer player, final TileWorkbench tw) {
         this.tile = tw;
@@ -151,18 +151,18 @@ public class ContainerWorkbench extends Container {
     @Override
     public void detectAndSendChanges() {
         //super.detectAndSendChanges();
-        for (int i = 45; i < this.inventorySlots.size(); ++i) {
-            ItemStack itemstack = this.inventorySlots.get(i).getStack();
-            ItemStack itemstack1 = this.inventoryItemStacks.get(i);
+        for (int i = sourceSlot + recipeSlot; i < this.inventorySlots.size(); ++i) {
+            ItemStack itemStack = this.inventorySlots.get(i).getStack();
+            ItemStack itemStack1 = this.inventoryItemStacks.get(i);
 
-            if (!ItemStack.areItemStacksEqual(itemstack1, itemstack)) {
-                boolean clientStackChanged = !ItemStack.areItemStacksEqualUsingNBTShareTag(itemstack1, itemstack);
-                itemstack1 = VersionUtil.isEmpty(itemstack) ? VersionUtil.empty() : itemstack.copy();
-                this.inventoryItemStacks.set(i, itemstack1);
+            if (!ItemStack.areItemStacksEqual(itemStack1, itemStack)) {
+                boolean clientStackChanged = !ItemStack.areItemStacksEqualUsingNBTShareTag(itemStack1, itemStack);
+                itemStack1 = VersionUtil.isEmpty(itemStack) ? VersionUtil.empty() : itemStack.copy();
+                this.inventoryItemStacks.set(i, itemStack1);
 
                 if (clientStackChanged)
                     for (IContainerListener listener : this.listeners) {
-                        listener.sendSlotContents(this, i, itemstack1);
+                        listener.sendSlotContents(this, i, itemStack1);
                     }
             }
         }
@@ -186,7 +186,7 @@ public class ContainerWorkbench extends Container {
             if (index < tile.recipesList.size()) {
                 if (dragType == 0) {
                     if (index == tile.getRecipeIndex()) {
-                        tile.workcontinue = !tile.workcontinue;
+                        tile.workContinue = !tile.workContinue;
                     } else {
                         tile.setCurrentRecipeIndex(index);
                     }
@@ -222,7 +222,7 @@ public class ContainerWorkbench extends Container {
                     }
                 } else {
                     if (isEmpty(playerStack)) {
-                        //take itemstack FROM workbench
+                        //take ItemStack FROM workbench
                         if (isEmpty(slotStack)) {
                             slot.putStack(empty());
                             inventoryplayer.setItemStack(empty());
@@ -249,7 +249,7 @@ public class ContainerWorkbench extends Container {
                             VersionUtil.shrink(playerStack, j2);
                             VersionUtil.grow(slotStack, j2);
                         }
-                        //Swiching items. not need!
+                        //Switching items. not need!
                         /*else if (playerStack.getCount() <= slot.getItemStackLimit(playerStack)) {
 
                             slot.putStack(playerStack);
@@ -283,7 +283,7 @@ public class ContainerWorkbench extends Container {
                 } else if (getCount(itemstack) < maxSize) {
                     //come?
                     if (Config.content().debug())
-                        QuarryPlus.LOGGER.info("ContainerWorkbench#mergeItemStack itemstack.getCount() < maxSize");
+                        QuarryPlus.LOGGER.info("ContainerWorkbench#mergeItemStack itemStack.getCount() < maxSize");
                     VersionUtil.shrink(stack, maxSize - getCount(itemstack));
                     VersionUtil.setCount(itemstack, maxSize);
                     slot.onSlotChanged();
@@ -294,9 +294,9 @@ public class ContainerWorkbench extends Container {
         if (nonEmpty(stack)) {
             for (int i = 0; i < sourceSlot; i++) {
                 Slot slot1 = this.inventorySlots.get(i);
-                ItemStack itemstack1 = slot1.getStack();
+                ItemStack itemStack1 = slot1.getStack();
 
-                if (isEmpty(itemstack1) && slot1.isItemValid(stack)) {
+                if (isEmpty(itemStack1) && slot1.isItemValid(stack)) {
                     //NEVER
                     /* if (stack.getCount() > slot1.getSlotStackLimit()) {
                         slot1.putStack(stack.splitStack(slot1.getSlotStackLimit()));

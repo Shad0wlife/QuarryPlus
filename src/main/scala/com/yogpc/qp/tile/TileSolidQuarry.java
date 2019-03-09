@@ -5,12 +5,17 @@ import java.util.List;
 import com.yogpc.qp.block.BlockSolidQuarry;
 import com.yogpc.qp.gui.TranslationKeys;
 import com.yogpc.qp.version.VersionUtil;
+import javax.annotation.Nonnull;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntityFurnace;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
+import net.minecraftforge.items.IItemHandlerModifiable;
+import net.minecraftforge.items.wrapper.InvWrapper;
 import scala.Symbol;
 
 public class TileSolidQuarry extends TileQuarry {
@@ -40,17 +45,22 @@ public class TileSolidQuarry extends TileQuarry {
     }
 
     @Override
-    public void readFromNBT(NBTTagCompound nbttc) {
-        super.readFromNBT(nbttc);
-        fuelCount = nbttc.getInteger("fuelCount");
-        fuel = VersionUtil.fromNBTTag(nbttc.getCompoundTag("fuel"));
+    protected IBlockState S_getFillBlock() {
+        return Blocks.AIR.getDefaultState(); // Replace with dummy block is not allowed.
     }
 
     @Override
-    public NBTTagCompound writeToNBT(NBTTagCompound nbttc) {
-        nbttc.setInteger("fuelCount", fuelCount);
-        nbttc.setTag("fuel", fuel.serializeNBT());
-        return super.writeToNBT(nbttc);
+    public void readFromNBT(NBTTagCompound nbt) {
+        super.readFromNBT(nbt);
+        fuelCount = nbt.getInteger("fuelCount");
+        fuel = VersionUtil.fromNBTTag(nbt.getCompoundTag("fuel"));
+    }
+
+    @Override
+    public NBTTagCompound writeToNBT(NBTTagCompound nbt) {
+        nbt.setInteger("fuelCount", fuelCount);
+        nbt.setTag("fuel", fuel.serializeNBT());
+        return super.writeToNBT(nbt);
     }
 
     @Override
@@ -133,14 +143,25 @@ public class TileSolidQuarry extends TileQuarry {
     }
 
     @Override
+    public IItemHandlerModifiable createHandler() {
+        return new InvWrapper(this) {
+            @Nonnull
+            @Override
+            public ItemStack extractItem(int slot, int amount, boolean simulate) {
+                return slot == 0 ? ItemStack.EMPTY : super.extractItem(slot, amount, simulate);
+            }
+        };
+    }
+
+    @Override
     protected boolean isWorking() {
         return super.isWorking() && (fuelCount > 0 || VersionUtil.nonEmpty(fuel));
     }
 
     @Override
-    public List<ITextComponent> getDebugmessages() {
-        List<ITextComponent> list = super.getDebugmessages();
-        // I know super.getDebugmessages returns ArrayList.
+    public List<ITextComponent> getDebugMessages() {
+        List<ITextComponent> list = super.getDebugMessages();
+        // I know super.getDebugMessages returns ArrayList.
         list.add(new TextComponentString("FuelCount : " + fuelCount));
         return list;
     }

@@ -18,6 +18,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiPredicate;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import com.yogpc.qp.Config;
@@ -53,13 +54,13 @@ public interface IEnchantableTile {
         else if (id == EfficiencyID)
             return level <= 5;
         else
-            return id == SilktouchID;
+            return id == SilktouchID && level == 1;
     };
 
     /**
      * Called after enchantment setting.
      */
-    void G_reinit();
+    void G_ReInit();
 
     /**
      * @return Map (Enchantment id, level)
@@ -71,7 +72,7 @@ public interface IEnchantableTile {
      * @param id  Enchantment id
      * @param val level
      */
-    void setEnchantent(short id, short val);
+    void setEnchantment(short id, short val);
 
     default void sendEnchantMassage(EntityPlayer player) {
         Util.getEnchantmentsChat(this).forEach(c -> VersionUtil.sendMessage(player, c));
@@ -91,16 +92,16 @@ public interface IEnchantableTile {
     public static class Util {
 
         public static void init(@Nonnull final IEnchantableTile te, @Nullable final NBTTagList tagList) {
-            VersionUtil.nbtListStream(tagList).forEach(nbt -> te.setEnchantent(nbt.getShort("id"), nbt.getShort("lvl")));
-            te.G_reinit();
+            VersionUtil.nbtListStream(tagList).forEach(nbt -> te.setEnchantment(nbt.getShort("id"), nbt.getShort("lvl")));
+            te.G_ReInit();
         }
 
-        public static List<ITextComponent> getEnchantmentsChat(@Nonnull final IEnchantableTile te) {
-            final Map<Integer, Integer> enchs = te.getEnchantments();
-            if (enchs.size() <= 0) {
+        static List<ITextComponent> getEnchantmentsChat(@Nonnull final IEnchantableTile te) {
+            final Map<Integer, Integer> enchantments = te.getEnchantments();
+            if (enchantments.size() <= 0) {
                 return Collections.singletonList(new TextComponentTranslation(TranslationKeys.PLUSENCHANTNO));
             } else {
-                LinkedList<ITextComponent> collect = enchs.entrySet().stream()
+                LinkedList<ITextComponent> collect = enchantments.entrySet().stream()
                     .map(keys(Enchantment::getEnchantmentByID))
                     .filter(byKey(APacketTile.nonNull)).map(toAny((enchantment, level) ->
                         new TextComponentTranslation(TranslationKeys.INDENT, new TextComponentTranslation(enchantment.getName()),
@@ -117,6 +118,11 @@ public interface IEnchantableTile {
                 .map(keys(Enchantment::getEnchantmentByID))
                 .filter(byKey(APacketTile.nonNull))
                 .forEach(entry(is::addEnchantment));
+        }
+
+        @Nonnull
+        public static <T extends IEnchantableTile> Consumer<T> initConsumer(ItemStack stack) {
+            return t -> init(t, stack.getEnchantmentTagList());
         }
     }
 
