@@ -63,26 +63,44 @@ public class TileMiningWell extends TileBasic implements ITickable {
     public void update() {
         super.update();
         if (!getWorld().isRemote && !machineDisabled) {
+            //Starting position: 1 block below Device
             int depth = getPos().getY() - 1;
 
-            //PUMP ONLY TODO testing
-            if(this.pump != null) {
-                TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
-                if (te instanceof TilePump) {
-                    TilePump pumpTE = (TilePump) te;
-                    pumpTE.handleBorders(this, depth);
-                } else {
-                    this.pump = null;
-                }
-            }
-
-            while (!S_checkTarget(depth)) {
-                if (this.working)
+            if (this.working) {
+                //Find next block to mine and make sure the mining pipe is in place
+                while (!S_checkTarget(depth)) {
                     getWorld().setBlockState(new BlockPos(getPos().getX(), depth, getPos().getZ()), QuarryPlusI.blockPlainPipe().getDefaultState());
-                depth--;
-            }
-            if (this.working)
+                    //PUMP ONLY TODO testing
+                    //Searches for damming positions around the mining pipe
+                    //This is inefficient to do every time, but without it, the dam would only be built before minable layers
+                    //Meaning that if the MW hits an air pocket and in the ring above were liquid, that wouldn't be dammed
+                    if(this.pump != null) {
+                        TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                        if (te instanceof TilePump) {
+                            TilePump pumpTE = (TilePump) te;
+                            pumpTE.discoverBorders(this, depth);
+                        } else {
+                            this.pump = null;
+                        }
+                    }
+                    depth--;
+                }
+
+                //PUMP ONLY TODO testing
+                //Dams all found damming position
+                if(this.pump != null) {
+                    TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                    if (te instanceof TilePump) {
+                        TilePump pumpTE = (TilePump) te;
+                        pumpTE.damBorders(this);
+                    } else {
+                        this.pump = null;
+                    }
+                }
+
+                //Proceed to break next target block
                 S_breakBlock(getPos().getX(), depth, getPos().getZ());
+            }
             S_pollItems();
         }
     }

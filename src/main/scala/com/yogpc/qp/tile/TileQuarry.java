@@ -102,9 +102,10 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                     TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
                     if(te instanceof TilePump) {
                         TilePump pumpTE = (TilePump)te;
-                        if(pumpTE.liquidsToRemove() > 0){
-                            pumpTE.S_removeLiquids(this);
-                        }
+                        //Dam the border ring if damming is required
+                        pumpTE.damBorders(this);
+                        //Remove liquids in mining area if there are any
+                        pumpTE.S_removeLiquids(this);
                     }else{
                         this.pump = null;
                     }
@@ -177,15 +178,23 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
             case MAKEFRAME:
                 if (this.targetY < this.yMin) {
 
-                    //PUMP ONLY - make first frame ring
+                    //PUMP ONLY - make first damming frame ring after finishing the actual frame
                     if(this.pump != null) {
                         TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
                         if (te instanceof TilePump) {
                             TilePump pumpTE = (TilePump) te;
-                            pumpTE.handleBorders(this, targetY);
+                            pumpTE.discoverBorders(this, targetY);
                         } else {
                             this.pump = null;
                         }
+                    }
+
+                    //Generate current and next layer in cubic worlds(the ones after are handled on layer change)
+                    ICubicWorld cubicWorld = (ICubicWorld)getWorld();
+                    if(cubicWorld.isCubicWorld()) {
+                        int layerY = cubicWorld.getCubeFromBlockCoords(new BlockPos(this.targetX, this.targetY, this.targetZ)).getY();
+                        this.genLayer(layerY);
+                        this.genLayer(layerY - 1);
                     }
 
                     setNow(MOVEHEAD);
@@ -275,6 +284,20 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                         this.digged = false;
                     else {
                         this.targetY--;
+
+                        //PUMP ONLY
+                        //New Y-Layer -> check the layer's borders for damming
+                        if(this.pump != null) {
+                            TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
+                            if (te instanceof TilePump) {
+                                TilePump pumpTE = (TilePump) te;
+                                pumpTE.discoverBorders(this, targetY);
+                            } else {
+                                this.pump = null;
+                            }
+                        }
+
+                        //If a new cube layer was started, generate the cube layer afterwards
                         ICubicWorld cubicWorld = (ICubicWorld)getWorld();
                         if(cubicWorld.isCubicWorld()) {
                             int newY = cubicWorld.getCubeFromBlockCoords(new BlockPos(this.targetX, this.targetY, this.targetZ)).getY();
@@ -282,17 +305,6 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                             if (newY < oldY) {
                                 //New layer started, so generate 1 layer ahead - this may lead to the topmost layer not being generated though so: TODO
                                 this.genLayer(newY - 1);
-                            }
-                        }
-
-                        //PUMP ONLY
-                        if(this.pump != null) {
-                            TileEntity te = getWorld().getTileEntity(getPos().offset(this.pump));
-                            if (te instanceof TilePump) {
-                                TilePump pumpTE = (TilePump) te;
-                                pumpTE.handleBorders(this, targetY);
-                            } else {
-                                this.pump = null;
                             }
                         }
 
@@ -328,6 +340,7 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
 
             //PUMP ONLY
             //TODO ~~Marked for removal - DUPLICATE~~
+            /*
             if(this.pump != null) {
                 //Damming when touching the border
                 boolean xMinFlag = this.targetX == this.xMin + 1;
@@ -365,6 +378,7 @@ public class TileQuarry extends TileBasic implements IDebugSender, IChunkLoadTil
                     pumpTE.checkAndSetFrame(targetPos.offset(EnumFacing.SOUTH));
                 }
             }
+            */
         }
     }
 

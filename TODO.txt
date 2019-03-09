@@ -1,0 +1,44 @@
+- Cubeload the work area
+	- make class with ITicket
+	- add that ticket to cube
+- preload the next layer
+	- 1 tick generation
+	- 1 tick population
+- store in (vanilla's) chunkcache
+
+Discord:
+
+
+Barteks2xToday at 8:17 PM
+	actually if you want to prepopulate 17x17 area
+	you need to generate 19x3x19 cubes
+
+Shad0wlifeToday at 8:17 PM
+	yeah
+	but I don't have to chunkload all of them, right?
+	only the 17x17 area
+
+Barteks2xToday at 8:18 PM
+	no, only the 17x17 ones
+	and maybe the ones below
+	also this is ITicket interface
+	public interface ITicket {
+
+		/**
+		 * Weather or not a cube with this ticket should tick.
+		 * (should blocks update, entities move around, and furnaces cook?)
+		 *
+		 * @return should cubes with this ticket tick
+		 */
+		boolean shouldTick();
+	}
+
+Shad0wlifeToday at 8:19 PM
+	good. so I start with generating 19x19x4 and populating 17x17x2.
+	and every time I start a new layer, I generate another 19x19 and then populate another 17x17
+
+Barteks2xToday at 8:19 PM
+	that's all you have to implement, and then add that object to each cube you want to chunkload
+	that should do it
+	you will need to dpend on cubicchunks itself instead of just the api to do that
+	the API may expose a different chunkloading API

@@ -17,7 +17,9 @@ import java.util.*;
 import java.util.stream.IntStream;
 
 import com.google.common.collect.ImmutableMap;
-import com.yogpc.qp.Config;
+import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+
 import com.yogpc.qp.PowerManager;
 import com.yogpc.qp.QuarryPlus;
 import com.yogpc.qp.QuarryPlusI;
@@ -27,6 +29,7 @@ import com.yogpc.qp.packet.PacketHandler;
 import com.yogpc.qp.packet.pump.Mappings;
 import com.yogpc.qp.packet.pump.Now;
 import com.yogpc.qp.version.VersionUtil;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
@@ -35,6 +38,7 @@ import io.github.opencubicchunks.cubicchunks.api.world.ICube;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubeProviderServer;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorld;
 import io.github.opencubicchunks.cubicchunks.api.world.ICubicWorldServer;
+
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.state.IBlockState;
@@ -52,7 +56,6 @@ import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fluids.Fluid;
@@ -67,6 +70,8 @@ import net.minecraftforge.fluids.capability.FluidTankProperties;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidTankProperties;
 import scala.Symbol;
+
+import static io.github.opencubicchunks.cubicchunks.api.util.Bits.*;
 
 public class TilePump extends APacketTile implements IEnchantableTile, ITickable, IDebugSender {
     @SuppressWarnings("NullableProblems")
@@ -287,8 +292,24 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
             VersionUtil.sendMessage(ep, new TextComponentTranslation(TranslationKeys.PUMP_RTOGGLE_NUM, Integer.toString(this.range * 2 + 1)));
     }
 
-    List<BlockPos> liquidCoords = new LinkedList<>();
+    /*
 
+     */
+    private static long blockPosToLong(BlockPos source, BlockPos blockPos){
+        return packSignedToLong(blockPos.getX() - source.getX(), 16, 48) |
+                packUnsignedToLong( source.getY() - blockPos.getY(), 31, 16) |
+                packSignedToLong(blockPos.getZ() - source.getZ(), 16, 0);
+    }
+
+    private static BlockPos longToBlockPos(BlockPos source, long l){
+        return new BlockPos(
+                unpackSigned(l, 16, 48) + source.getX(),
+                source.getY() - unpackUnsigned(l, 31, 16) ,
+                unpackSigned(l, 16,0) + source.getZ()
+        );
+    }
+
+    LongArrayList liquidCoords = new LongArrayList();
     /**
      * Finds liquids in the layer of the given block coordinates in the range of the Mining device
      * Uses a slightly modified breadth first search
@@ -301,24 +322,37 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
         QuarryPlus.LOGGER.debug("[Pump] Starting to discover water");
         BlockPos targetPos = new BlockPos(srcX, srcY, srcZ);
         //If the current block was already registered, we don't need the tracking again, the BFS should've found everything
-        if(liquidCoords.contains(targetPos)){
+        if(liquidCoords.contains(blockPosToLong(this.getPos(), targetPos))){
             QuarryPlus.LOGGER.debug("[Pump] Current location already listed. Returning.");
             return;
         }
         IBlockState targetState = getBlockStateAt(targetPos);
 
-        if (isLiquid(targetState)) {
+        if (isLiquid(targetState, false, getWorld(), targetPos)) {
             //If the target is a liquid (source doesn't matter, it has to come from somewhere) search for sources
 
             boolean isQuarry = miner instanceof TileQuarry;
             if(isQuarry){
-                Queue<BlockPos> q = new LinkedList<>();
-                List<BlockPos> liquidCoordsLocal = new LinkedList<>();
+                LongArrayFIFOQueue q = new LongArrayFIFOQueue(); //Queue for elements to check
+                LongArrayList liquidCoordsLocal = new LongArrayList(); //List of checked elements (including flowing water)
                 TileQuarry quarry = (TileQuarry)miner;
-                q.add(targetPos);
-                while(!q.isEmpty()){
-                    BlockPos currentPos = q.remove();
+                long currentLong = blockPosToLong(this.getPos(), targetPos);
 
+                //Handle source node
+                q.enqueue(currentLong);
+                liquidCoordsLocal.add(blockPosToLong(this.getPos(), targetPos));
+                //If it's a source, add it to the drain list too
+                if (isLiquid(targetState, true, getWorld(), targetPos)){
+                    liquidCoords.add(blockPosToLong(this.getPos(), targetPos));
+                }
+
+                //QuarryPlus.LOGGER.debug("[Pump] Started with ({}, {}, {}) as {}", targetPos.getX(), targetPos.getY(), targetPos.getZ(), currentLong);
+                while(!q.isEmpty()){
+                    long elem = q.dequeueLong();
+                    BlockPos currentPos = longToBlockPos(this.getPos(), elem);
+                    //QuarryPlus.LOGGER.debug("[Pump] Dequeued ({}, {}, {}) from {}", currentPos.getX(), currentPos.getY(), currentPos.getZ(), elem);
+
+                    //Add all neighbours
                     for(int cntDirs = 0; cntDirs < 4; cntDirs++){
                         BlockPos nextPos;
                         switch (cntDirs){
@@ -337,36 +371,41 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
                         }
                         if(isInXZBounds(nextPos, quarry.xMin, quarry.xMax, quarry.zMin, quarry.zMax)){
                             //New position is in quarry range
-                            if(!q.contains(nextPos) && !liquidCoordsLocal.contains(nextPos) && !liquidCoords.contains(nextPos)){
-                                //new position isn't in the queue or handled objects yet
-                                if(isLiquid(getBlockStateAt(nextPos))){
-                                    //new position is a liquid
-                                    q.add(nextPos);
+                            long nextPosLong = blockPosToLong(this.getPos(), nextPos);
+                            if(!liquidCoordsLocal.contains(nextPosLong) && !liquidCoords.contains(nextPosLong)){
+                                //new position isn't in the handled objects yet
+                                IBlockState nextState = getBlockStateAt(nextPos);
+                                if (isLiquid(nextState, false, getWorld(), nextPos)) {
+                                    liquidCoordsLocal.add(nextPosLong);
+                                    q.enqueue(nextPosLong);
+                                }
+                                if (isLiquid(nextState, true, getWorld(), targetPos)){
+                                    liquidCoords.add(nextPosLong);
                                 }
                             }
                         }
                     }
-                    //exclude block from search even if flowing, but don't add to removal list
-                    if(isLiquid(getBlockStateAt(currentPos), false, getWorld(), currentPos)){
-                        liquidCoordsLocal.add(currentPos);
-                    }
-                    //check if current position is a source block and if so, queue for removal
-                    if(isLiquid(getBlockStateAt(currentPos), true, getWorld(), currentPos)){
-                        liquidCoords.add(currentPos);
+                }
+                //Remove all stuck flowing water (only flowing water but no sources discovered)
+                if(liquidCoords.isEmpty() && !liquidCoordsLocal.isEmpty()){
+                    while (!liquidCoordsLocal.isEmpty()){
+                        removeLiquidAndSetAt(longToBlockPos(this.getPos(), liquidCoordsLocal.removeLong(0)), Blocks.AIR.getDefaultState());
                     }
                 }
             }else{
-                liquidCoords.add(targetPos);
+                liquidCoords.add(blockPosToLong(this.getPos(), targetPos));
             }
         }
     }
+
+    LongArrayList borderCoords = new LongArrayList();
 
     /**
      * Handles all potential border spots in a layer
      * @param miner The mining device of which the borders are to be checked
      * @param y The y layer to check on
      */
-    void handleBorders(final TileBasic miner, final int y){
+    void discoverBorders(final TileBasic miner, final int y){
         boolean isQuarry = miner instanceof TileQuarry;
         if(isQuarry){
             TileQuarry quarry = (TileQuarry)miner;
@@ -375,44 +414,83 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
             int minZ = quarry.zMin;
             int maxZ = quarry.zMax;
             BlockPos bp1 = new BlockPos(minX, y, minZ); //NW Corner
-            BlockPos bp2 = new BlockPos(minX, y, maxZ); //SW Corner
-            BlockPos bp3 = new BlockPos(maxX, y, minZ); //NE Corner
-            BlockPos bp4 = new BlockPos(maxX, y, maxZ); //SE Corner
+            BlockPos bp2 = new BlockPos(maxX, y, minZ); //NE Corner
+            BlockPos bp3 = new BlockPos(maxX, y, maxZ); //SE Corner
+            BlockPos bp4 = new BlockPos(minX, y, maxZ); //SW Corner
             int diffX = maxX - minX;
             int diffZ = maxZ - minZ;
 
+            BlockPos pumpBP = this.getPos();
+            QuarryPlus.LOGGER.info("[Pump][bps] Pump location ({}, {}, {})", pumpBP.getX(), pumpBP.getY(), pumpBP.getZ());
+
             for(int cnt1 = 0; cnt1 < diffX; cnt1++){
-                checkAndSetFrame(bp1);
+                long bp1l = blockPosToLong(this.getPos(), bp1);
+                borderCoords.add(bp1l);
                 bp1 = bp1.east();
             }
-            for(int cnt2 = 0; cnt2 < diffX; cnt2++){
-                checkAndSetFrame(bp2);
-                bp2 = bp2.north();
+            for(int cnt2 = 0; cnt2 < diffZ; cnt2++){
+                long bp2l = blockPosToLong(this.getPos(), bp2);
+                borderCoords.add(bp2l);
+                bp2 = bp2.south();
             }
-            for(int cnt3 = 0; cnt3 < diffZ; cnt3++){
-                checkAndSetFrame(bp3);
-                bp3 = bp3.south();
+            for(int cnt3 = 0; cnt3 < diffX; cnt3++){//
+                long bp3l = blockPosToLong(this.getPos(), bp3);
+                borderCoords.add(bp3l);
+                bp3 = bp3.west();
             }
-            for(int cnt4 = 0; cnt4 < diffZ; cnt4++){
-                checkAndSetFrame(bp4);
-                bp4 = bp4.west();
+            for(int cnt4 = 0; cnt4 < diffZ; cnt4++){//
+                long bp4l = blockPosToLong(this.getPos(), bp4);
+                borderCoords.add(bp4l);
+                bp4 = bp4.north();
             }
         }else if(miner instanceof TileMiningWell){
             TileMiningWell tmw = (TileMiningWell)miner;
             BlockPos mwPos = new BlockPos(tmw.getPos().getX(), y, tmw.getPos().getZ());
-            checkAndSetFrame(mwPos.east());
-            checkAndSetFrame(mwPos.east().north());
-            checkAndSetFrame(mwPos.north());
-            checkAndSetFrame(mwPos.west().north());
-            checkAndSetFrame(mwPos.west());
-            checkAndSetFrame(mwPos.west().south());
-            checkAndSetFrame(mwPos.south());
-            checkAndSetFrame(mwPos.east().south());
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.east()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.east().north()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.north()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.west().north()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.west()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.west().south()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.south()));
+            borderCoords.add(blockPosToLong(this.getPos(), mwPos.east().south()));
         }
     }
 
     /**
+     * Dams the border locations stored in borderCoords
+     * @param miner The mining device to draw energy from
+     */
+    void damBorders(final TileBasic miner){
+        //QuarryPlus.LOGGER.info("[Pump] Starting to dam {} water", dammingRemaining());
+        while(!borderCoords.isEmpty()){
+            BlockPos targetPos = longToBlockPos(this.getPos(), borderCoords.getLong(0));
+            IBlockState checkState = getBlockStateAt(targetPos);
+            if (TilePump.isLiquid(checkState, true, getWorld(), targetPos)) {
+                if(!PowerManager.useEnergyPump(miner, this.unbreaking, 1, 1)) {
+                    return;
+                }
+                //Source block gets drained
+                removeLiquidAndSetAt(targetPos, QuarryPlusI.blockFrame().getDammingState());
+                borderCoords.removeLong(0);
+            }else if(TilePump.isLiquid(checkState, false, getWorld(), targetPos)){
+                if(!PowerManager.useEnergyPump(miner, this.unbreaking, 0, 1)) {
+                    return;
+                }
+                //Only set to dam, but it's not a source so don't drain
+                getWorld().setBlockState(targetPos, QuarryPlusI.blockFrame().getDammingState());
+                borderCoords.removeLong(0);
+            }else{
+                //Not liquid, don't dam
+                borderCoords.removeLong(0);
+            }
+        }
+        //QuarryPlus.LOGGER.info("[Pump] Stopping to dam with {} water left", dammingRemaining());
+    }
+
+    /**
      * Checks a spot for liquid and places a dam if liquid is found
+     * TODO marked for removal
      * @param thatPos Pos to check
      */
     void checkAndSetFrame(BlockPos thatPos){
@@ -433,17 +511,15 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
      */
     void S_removeLiquids(final APowerTile powerTile) {
         //Handle all found liquid sources
-        QuarryPlus.LOGGER.debug("[Pump] Starting to remove water");
+        //QuarryPlus.LOGGER.info("[Pump] Starting to remove {} water", liquidsToRemove());
         while(!liquidCoords.isEmpty()) {
             if(!PowerManager.useEnergyPump(powerTile, this.unbreaking, 1, 0)) {
                 return;
             }
-            BlockPos liquidPos = liquidCoords.remove(0); //remove 1st element
+            BlockPos liquidPos = longToBlockPos(this.getPos(), liquidCoords.removeLong(0)); //remove 1st element
             removeLiquidAndSetAt(liquidPos, Blocks.AIR.getDefaultState());
         }
-        QuarryPlus.LOGGER.debug("[Pump] Stopped to remove water. {} remaining.", liquidsToRemove());
-        //Removed a liquid block - TODO does it work this way?
-        return;
+        //QuarryPlus.LOGGER.info("[Pump] Stopped to remove water. {} remaining.", liquidsToRemove());
     }
 
     /**
@@ -474,6 +550,13 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
     }
 
     /**
+     * @return The number of liquid blocks left to dam
+     */
+    int dammingRemaining(){
+        return this.borderCoords.size();
+    }
+
+    /**
      * Checks if a given BlockPos is inside of the given x/z boundaries
      * @param pos BlockPos to check for
      * @param minX Lower X bound
@@ -482,13 +565,8 @@ public class TilePump extends APacketTile implements IEnchantableTile, ITickable
      * @param maxZ Upper Z bound
      * @return
      */
-    private boolean isInXZBounds(BlockPos pos, int minX, int maxX, int minZ, int maxZ){
-        int x = pos.getX();
-        int z = pos.getZ();
-        if(minX < x && maxX > x && minZ < z && maxZ > z){
-            return  true;
-        }
-        return false;
+    private static boolean isInXZBounds(BlockPos pos, int minX, int maxX, int minZ, int maxZ){
+        return minX < pos.getX() && maxX > pos.getX() && minZ < pos.getZ() && maxZ > pos.getZ();
     }
 
     /**
